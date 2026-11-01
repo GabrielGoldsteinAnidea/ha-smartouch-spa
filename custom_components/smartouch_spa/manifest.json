@@ -1,0 +1,13 @@
+{
+  "domain": "smartouch_spa",
+  "name": "SmarTouch Spa",
+  "codeowners": ["@GabrielGoldsteinAnidea"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/GabrielGoldsteinAnidea/ha-smartouch-spa",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/GabrielGoldsteinAnidea/ha-smartouch-spa/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

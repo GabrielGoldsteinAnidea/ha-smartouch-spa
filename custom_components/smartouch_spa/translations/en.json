@@ -1,0 +1,79 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "Pick the spa's BWF-200 module. Its advertised name is not known yet; it is usually the strongest unknown device near the spa. Close the SmarTouch app first, a BLE peripheral typically accepts only one connection.",
+        "data": { "address": "Device" }
+      },
+      "bluetooth_confirm": { "description": "Set up {name}?" }
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "no_devices_found": "No connectable Bluetooth devices found"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Protocol parameters",
+        "description": "Leave UUIDs empty to stay in discovery mode (subscribe to every notifying characteristic and log raw frames). Fill these in from captures; see docs/REVERSE_ENGINEERING.md.",
+        "data": {
+          "notify_uuid": "Display notify characteristic UUID",
+          "write_uuid": "Button write characteristic UUID",
+          "write_with_response": "Write with response",
+          "display_prefix": "Display frame prefix (hex, optional)",
+          "display_offset": "Offset of first digit byte",
+          "display_length": "Number of digit bytes",
+          "segment_order": "Segment bit order, bit0 upward (e.g. abcdefg.)",
+          "setpoint_window": "Seconds the set point stays shown after a temp press",
+          "temp_unit": "Temperature unit shown by the spa",
+          "button_temp_up": "Temp Up payload (hex)",
+          "button_temp_down": "Temp Down payload (hex)",
+          "button_light": "Light payload (hex)",
+          "button_filter": "Filter payload (hex)",
+          "button_jets": "Jets payload (hex)"
+        }
+      }
+    },
+    "error": {
+      "invalid_hex": "Not valid hex",
+      "invalid_segment_order": "Must contain each of a-g once; '.' for decimal point, 'x' for unused"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "display": { "name": "Display" },
+      "water_temperature": { "name": "Water temperature" },
+      "last_frame": { "name": "Last raw frame" }
+    },
+    "button": {
+      "temp_up": { "name": "Temp up" },
+      "temp_down": { "name": "Temp down" },
+      "light": { "name": "Light" },
+      "filter": { "name": "Filter" },
+      "jets": { "name": "Jets" }
+    },
+    "climate": { "thermostat": { "name": "Thermostat" } }
+  },
+  "services": {
+    "send_raw": {
+      "name": "Send raw bytes",
+      "description": "Write raw bytes to a GATT characteristic (reverse engineering).",
+      "fields": {
+        "config_entry_id": { "name": "Spa", "description": "Spa to use (optional if only one)." },
+        "uuid": { "name": "Characteristic UUID", "description": "Characteristic to write." },
+        "data": { "name": "Data", "description": "Hex bytes." },
+        "response": { "name": "With response", "description": "Use write-with-response." }
+      }
+    },
+    "press_button": {
+      "name": "Press button",
+      "description": "Press a configured keypad button.",
+      "fields": {
+        "config_entry_id": { "name": "Spa", "description": "Spa to use (optional if only one)." },
+        "button": { "name": "Button", "description": "Button to press." }
+      }
+    }
+  }
+}

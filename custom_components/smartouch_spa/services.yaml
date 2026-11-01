@@ -1,0 +1,30 @@
+send_raw:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartouch_spa
+    uuid:
+      required: true
+      example: "0000ffe1-0000-1000-8000-00805f9b34fb"
+      selector:
+        text:
+    data:
+      required: true
+      example: "aa 01 02"
+      selector:
+        text:
+    response:
+      selector:
+        boolean:
+press_button:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartouch_spa
+    button:
+      required: true
+      selector:
+        select:
+          options: [temp_up, temp_down, light, filter, jets]

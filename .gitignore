@@ -1,0 +1,8 @@
+# Captures may contain the spa PIN, MAC addresses and network details.
+captures/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
