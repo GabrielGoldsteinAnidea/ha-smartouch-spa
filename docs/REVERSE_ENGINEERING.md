@@ -9,8 +9,8 @@ finding is cross-checked:
 * **C. Frida hooks**: what the app wrote and received, with characteristic
   UUIDs and timestamps (needs root, or a patched APK).
 
-You also have **D. the integration's discovery mode**. It subscribes to
-everything the module notifies and lets you send raw bytes from Home
+You also have **D. the integration itself**. It records every frame it
+sends and receives (without the PIN) and lets you send raw bytes from Home
 Assistant. Use it to confirm findings.
 
 Prerequisites on your computer: Android platform-tools (`adb`), Python 3,
@@ -38,14 +38,23 @@ tools/adb/pull_apk.sh
 tools/adb/decompile.sh captures/apk/base.apk
 ```
 
-Then read the files in `captures/findings/`:
+**SmarTouch Digital 1.1.2 is a Cordova app.** Its Java code is only the
+Cordova shell, so jadx output is not useful. `decompile.sh` detects this and
+extracts the JavaScript to `captures/www/assets/www/js/`, plus
+`findings/js_uuids.txt` and `findings/js_ble_calls.txt`. The files that
+matter are:
 
-* `uuids.txt`: GATT service and characteristic UUIDs. These are the most valuable single result.
-* `ble_calls.txt`: where it writes and subscribes. Open those classes in jadx-gui and follow how the byte arrays are built (the header, the checksum, and the PIN handling).
-* `byte_arrays.txt` and `buttons.txt`: the button command table, if it is static.
-* `display.txt`: the code that turns received bytes into the on-screen display. That code tells you the frame layout and the segment bit order directly.
-* `sockets.txt` and `urls.txt`: the WiFi-mode transport.
-* The script also reports whether the app is Flutter, React Native or Xamarin. If it is, the logic lives in `libapp.so`, `index.android.bundle` or .NET assemblies, and jadx will not show it. Tell me which framework it is and I will adjust the tooling.
+* `connection.js`: the service and characteristic UUIDs.
+* `navigation.js`: connect sequence, PIN handshake (`bleconnected`, `write_characteristic_mcode_p`, `splitter`), all reads, writes and subscriptions, and the cloud WebSocket (`start_ws`).
+* `panel.js`: key codes (`buttons_codes`), set point encoding (`send-temp-value`), and display decoding (`display`, `init_leds`).
+* `constants/load_frames.js`: the SVG keypad layouts. The element positions give the digit order and the meaning of each dot.
+
+docs/PROTOCOL.md already records what these files say. Re-check it if the app
+updates: run `find_package.sh` for the version, then diff the new
+`assets/www/js/` against the old one.
+
+For other apps the jadx findings still apply: `uuids.txt`, `ble_calls.txt`,
+`byte_arrays.txt`, `buttons.txt`, `display.txt`, `sockets.txt` and `urls.txt`.
 
 ## 3. Capture BLE traffic (B), one action per capture
 
@@ -62,14 +71,14 @@ Then read the files in `captures/findings/`:
    tools/adb/capture_btsnoop.sh stop light
    ```
 
-3. Repeat for `temp_up`, `temp_down`, `filter`, `jets`, and `idle` (connect only, touch nothing for 60 s).
+3. Repeat for `set_temp` (change the set point once on the app's temperature page, within 98-102 °F), `jets`, and `idle` (connect only, touch nothing for 60 s). The app has no Filter or Temp Up/Down keys for a spa.
 4. Analyze the captures:
 
    ```bash
    python3 tools/analysis/btsnoop_att.py captures/light.btsnoop --writes
    ```
 
-   This shows the button bytes.
+   This shows the written bytes. Expect `6c 30` (`l0`) on the keyboard characteristic for Light.
 
    ```bash
    python3 tools/analysis/btsnoop_att.py captures/idle.btsnoop --unique
@@ -79,8 +88,10 @@ Then read the files in `captures/findings/`:
 
 ## 4. Decode the display
 
-Use the `temp_up` capture, where the display changes from water temperature
-to the set point and back:
+docs/PROTOCOL.md already gives the frame layout from the app's code: 6 bytes,
+byte 0 the rightmost digit, bit0 = a ... bit6 = g, bit7 = dot, bytes 4-5
+LEDs. Use the captures to confirm it, especially from the `set_temp` capture,
+where the display changes from water temperature to the set point and back:
 
 * Bytes that never change are the header or prefix.
 * Bytes that change when the shown number changes are the digits.
@@ -133,18 +144,20 @@ saved pairing.
 
 ## 6. Confirm from Home Assistant (D)
 
-1. Install the integration. With no options set, it runs in **discovery mode**.
-2. Close the SmarTouch app. A BLE peripheral usually accepts only one central at a time.
-3. Watch the **Last raw frame** sensor, or download diagnostics. Diagnostics include the GATT table, the unique payloads per characteristic, and the last 200 frames.
-4. Replay a button you found:
+1. Close the SmarTouch app. The module probably accepts only one BLE connection.
+2. Install the integration and enter the spa's PIN. The **Auth state** diagnostic sensor should read `N`. `B` means the PIN was rejected, and Home Assistant then asks for it again.
+3. Compare the **Display** sensor with the spa panel. Download diagnostics for the GATT table, the unique payloads per characteristic, and the last 200 frames. The PIN and app code are never recorded.
+4. Toggle the **Light** entity. If the spa light changes and the entity's state follows, the key code and the light LED bit are both confirmed.
+5. Set the thermostat within 98-102 °F and check the panel.
+6. Record each result in PROTOCOL.md: change its status to Confirmed and cite the capture or test. If a value is wrong, fix it in `spa_core/protocol.py` and add a test built from the captured frame (PIN and MAC redacted).
 
-   ```yaml
-   action: smartouch_spa.send_raw
-   data:
-     uuid: "<write characteristic uuid>"
-     data: "<hex payload>"
-   ```
+To replay a single observed payload by hand:
 
-   If the light toggles, the finding is confirmed.
-5. Enter the confirmed values in **Settings → Devices & services → SmarTouch Spa → Configure**. The climate and button entities then become available.
-6. Commit the confirmed values as defaults in `spa_core/profile.py`, and update PROTOCOL.md with the source capture for each one.
+```yaml
+action: smartouch_spa.send_raw
+data:
+  uuid: "12ead13c-4d06-48b7-a3f9-cdf725acdd87"
+  data: "6c 30"
+```
+
+The service refuses the MMODE, MCODE, BTNAME and WIFICREDS characteristics, because writes there change the module's owner, name or WiFi settings.

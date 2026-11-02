@@ -5,8 +5,11 @@
 set -euo pipefail
 APK="${1:-captures/apk/base.apk}"
 OUT="${2:-captures/jadx}"
-command -v jadx >/dev/null || { echo "install jadx: https://github.com/skylot/jadx/releases" >&2; exit 1; }
-jadx --deobf -d "$OUT" "$APK" || true   # jadx exits non-zero on partial failures
+if command -v jadx >/dev/null; then
+  jadx --deobf -d "$OUT" "$APK" || true   # jadx exits non-zero on partial failures
+else
+  echo "jadx not found (https://github.com/skylot/jadx/releases): skipping the Java decompile. Cordova apps do not need it." >&2
+fi
 SRC="$OUT/sources"
 R="$OUT/../findings"; mkdir -p "$R"
 g() { grep -rnE --include='*.java' "$@" "$SRC" || true; }
@@ -20,5 +23,13 @@ g -i 'temp(_)?up|temp(_)?down|light|filter|jet|pump|blower|button|key(code)?' > 
 # Native libs would mean protocol code may live in C/C++ (look at lib/*/ in the APK).
 unzip -l "$APK" | grep -E '\.so$' > "$R/native_libs.txt" || true
 wc -l "$R"/*.txt
-echo "Also check for a Flutter/React Native/Xamarin app (logic would be in libapp.so / index.android.bundle / assemblies):"
-unzip -l "$APK" | grep -E 'libflutter|libapp.so|index.android.bundle|assemblies/' || echo "  none found: plain Java/Kotlin"
+echo "Also check for a Cordova/Flutter/React Native/Xamarin app:"
+if unzip -l "$APK" 'assets/www/cordova.js' >/dev/null 2>&1; then
+  echo "  Cordova: the logic is plain JavaScript in assets/www/js/. Extracting to $R/../www (jadx output is only the shell)."
+  unzip -o -q "$APK" 'assets/www/js/*' 'assets/www/index.html' 'assets/www/cordova_plugins.js' -d "$R/../www" || true
+  g() { grep -rnE --include='*.js' "$@" "$R/../www/assets/www/js" || true; }
+  g -i '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' > "$R/js_uuids.txt"
+  g 'ble\.(write|read|startNotification|connect)|WebSocket' > "$R/js_ble_calls.txt"
+  wc -l "$R"/js_*.txt
+fi
+unzip -l "$APK" | grep -E 'libflutter|libapp.so|index.android.bundle|assemblies/' || echo "  no Flutter/React Native/Xamarin markers"

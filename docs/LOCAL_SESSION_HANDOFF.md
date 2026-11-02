@@ -1,5 +1,10 @@
 # Handoff: finish the SmarTouch Spa integration in a local session
 
+> **Historical.** This brief describes the repo before the 2026-11-02 static
+> analysis. `profile.py`, discovery mode and the closed-loop set point it
+> mentions were replaced by `spa_core/protocol.py`. See docs/PROTOCOL.md for
+> the current state.
+
 Paste everything below the line into a Claude Code session running on the
 Windows PC. Start it in the restored `ha-smartouch-spa` folder.
 
