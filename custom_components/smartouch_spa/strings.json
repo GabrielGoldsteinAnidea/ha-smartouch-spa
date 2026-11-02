@@ -4,15 +4,21 @@
     "step": {
       "user": {
         "description": "Pick the spa's BWF-200 module. Close the SmarTouch app first: the module probably accepts only one Bluetooth connection.",
-        "data": { "address": "Device" }
+        "data": {
+          "address": "Device"
+        }
       },
       "pin": {
         "description": "Enter the 4-digit PIN chosen when {name} was set up in the SmarTouch app. Home Assistant signs in the way a second phone does, using its own code plus this PIN. It sends no setup commands.",
-        "data": { "pin": "PIN" }
+        "data": {
+          "pin": "PIN"
+        }
       },
       "reauth_confirm": {
         "description": "The spa rejected the PIN. Enter the current 4-digit PIN.",
-        "data": { "pin": "PIN" }
+        "data": {
+          "pin": "PIN"
+        }
       }
     },
     "error": {
@@ -30,56 +36,178 @@
         "title": "Spa options",
         "data": {
           "temp_unit": "Temperature unit to assume until the display shows one",
-          "setpoint_window": "Seconds the set point stays shown after a change"
+          "setpoint_window": "Seconds the set point stays shown after a change",
+          "sync_clock": "Keep the spa clock set to Home Assistant's time (on connect and daily)"
         }
       }
     }
   },
   "entity": {
     "sensor": {
-      "display": { "name": "Display" },
-      "water_temperature": { "name": "Water temperature" },
-      "last_frame": { "name": "Last raw frame" },
-      "auth_state": { "name": "Auth state" }
+      "display": {
+        "name": "Display"
+      },
+      "water_temperature": {
+        "name": "Water temperature"
+      },
+      "last_frame": {
+        "name": "Last raw frame"
+      },
+      "auth_state": {
+        "name": "Auth state"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "normal": "Normal",
+          "economy": "Economy",
+          "programming": "Programming",
+          "cold": "Cold (CoLd)",
+          "overheat": "Overheat (OH)",
+          "high_limit": "High limit (HLoH)",
+          "sensor_open": "Sensor open (SEoP)",
+          "sensor_short": "Sensor shorted (SESH)",
+          "no_flow_circulation": "No flow, circulation pump (PSoC)",
+          "no_flow_low": "No flow, low jets (PSoL)",
+          "no_flow_high": "No flow, high jets (PSoH)",
+          "timeout_error": "Time-out error (ToE)"
+        }
+      }
     },
     "button": {
-      "jets": { "name": "Jets" },
-      "aux": { "name": "Aux" },
-      "aux2": { "name": "Aux 2" },
-      "system": { "name": "System" }
+      "jets": {
+        "name": "Jets key"
+      },
+      "aux": {
+        "name": "Air key"
+      },
+      "aux2": {
+        "name": "Aux key"
+      },
+      "system": {
+        "name": "Set key (done using spa)"
+      },
+      "sync_clock": {
+        "name": "Sync spa clock"
+      }
     },
-    "light": { "light": { "name": "Light" } },
+    "light": {
+      "light": {
+        "name": "Light"
+      }
+    },
     "binary_sensor": {
-      "led_heating": { "name": "Heating" },
-      "led_filtering": { "name": "Filtering" },
-      "led_overheat": { "name": "Overheat" },
-      "led_jets_low": { "name": "Jets low" },
-      "led_jets_high": { "name": "Jets high" },
-      "led_jets2_low": { "name": "Jets 2 low" },
-      "led_jets2_high": { "name": "Jets 2 high" },
-      "led_air_low": { "name": "Air low" },
-      "led_air_high": { "name": "Air high" },
-      "led_edit": { "name": "Edit indicator" },
-      "led_am": { "name": "AM indicator" }
+      "led_heating": {
+        "name": "Heating"
+      },
+      "led_filtering": {
+        "name": "Filtering"
+      },
+      "led_overheat": {
+        "name": "Overheat"
+      },
+      "led_jets_low": {
+        "name": "Jets low"
+      },
+      "led_jets_high": {
+        "name": "Jets high"
+      },
+      "led_jets2_low": {
+        "name": "Jets 2 low"
+      },
+      "led_jets2_high": {
+        "name": "Jets 2 high"
+      },
+      "led_air_low": {
+        "name": "Air low"
+      },
+      "led_air_high": {
+        "name": "Air high"
+      },
+      "led_edit": {
+        "name": "Edit indicator"
+      },
+      "led_am": {
+        "name": "AM indicator"
+      },
+      "economy": {
+        "name": "Economy mode"
+      },
+      "problem": {
+        "name": "Problem"
+      }
     },
-    "climate": { "thermostat": { "name": "Thermostat" } }
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    },
+    "select": {
+      "jets": {
+        "name": "Jets",
+        "state": {
+          "off": "Off",
+          "low": "Lo",
+          "high": "Hi",
+          "low_high": "Lo + Hi"
+        }
+      },
+      "air": {
+        "name": "Air",
+        "state": {
+          "off": "Off",
+          "low": "Lo",
+          "high": "Hi",
+          "low_high": "Lo + Hi"
+        }
+      },
+      "aux": {
+        "name": "Jets 2",
+        "state": {
+          "off": "Off",
+          "low": "Lo",
+          "high": "Hi",
+          "low_high": "Lo + Hi"
+        }
+      }
+    },
+    "time": {
+      "clock": {
+        "name": "Spa clock"
+      }
+    }
   },
   "services": {
     "send_raw": {
       "name": "Send raw bytes",
       "description": "Write raw bytes to a GATT characteristic (reverse engineering). Writes that change the module's configuration are refused.",
       "fields": {
-        "config_entry_id": { "name": "Spa", "description": "Spa to use (optional if only one)." },
-        "uuid": { "name": "Characteristic UUID", "description": "Characteristic to write." },
-        "data": { "name": "Data", "description": "Hex bytes." }
+        "config_entry_id": {
+          "name": "Spa",
+          "description": "Spa to use (optional if only one)."
+        },
+        "uuid": {
+          "name": "Characteristic UUID",
+          "description": "Characteristic to write."
+        },
+        "data": {
+          "name": "Data",
+          "description": "Hex bytes."
+        }
       }
     },
     "press_button": {
       "name": "Press button",
-      "description": "Press a keypad key.",
+      "description": "Press a keypad key once. light = LITE, jets = JETS, aux = AIR, aux2 = AUX, system = SET (the app's names).",
       "fields": {
-        "config_entry_id": { "name": "Spa", "description": "Spa to use (optional if only one)." },
-        "button": { "name": "Button", "description": "Key to press." }
+        "config_entry_id": {
+          "name": "Spa",
+          "description": "Spa to use (optional if only one)."
+        },
+        "button": {
+          "name": "Button",
+          "description": "Key to press."
+        }
       }
     }
   }

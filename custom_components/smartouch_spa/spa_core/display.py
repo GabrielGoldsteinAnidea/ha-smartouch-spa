@@ -9,9 +9,14 @@ Display text comes from spa_core.protocol.parse_display, e.g. "102°F",
 " 99°F", "38.5°C", "12:30". The app's code shows the unit glyph is the
 rightmost digit and a degree dot precedes it (see docs/PROTOCOL.md).
 
-ASSUMPTION (not yet verified on a real spa; see docs/PROTOCOL.md):
+ASSUMPTIONS (not yet verified on a real spa; see docs/PROTOCOL.md):
   * After a set point change the display shows the set point for a few
     seconds (``setpoint_window``), then returns to water temperature.
+  * "h:mm" with the colon lit is the time of day, with the AM light telling
+    AM from PM. The manuals say the panel shows the time of day for the first
+    10 seconds of every minute once it has been set.
+  * Messages such as "ECon" alternate with the temperature (ECon was seen once
+    a minute), so a message counts as current for ``STATUS_WINDOW`` seconds.
 """
 
 from __future__ import annotations
@@ -21,7 +26,14 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from . import status as status_mod
+
 _TEMP_RE = re.compile(r"^\s*(\d{1,3}(?:\.\d)?)\s*°?\s*([FC])?\s*$")
+
+_CLOCK_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
+
+# Seconds a status message stays "current" after it was last shown.
+STATUS_WINDOW = 90.0
 
 # The app's spa limits are 40-104 F / 4.8-40 C (js/panel.js device_limits);
 # allow a little margin so a reading slightly outside is still shown.
@@ -59,6 +71,21 @@ def parse_temperature(text: str) -> Reading | None:
     return Reading(value, unit)
 
 
+def parse_clock(text: str, am: bool | None) -> tuple[int, int] | None:
+    """Return (hour 0-23, minute) for a time-of-day display, else None.
+
+    ``am`` is the AM indicator light. Without it the time cannot be placed.
+    """
+    match = _CLOCK_RE.match(text)
+    if not match or am is None:
+        return None
+    hour12, minute = int(match.group(1)), int(match.group(2))
+    if not (1 <= hour12 <= 12 and 0 <= minute <= 59):
+        return None
+    hour = hour12 % 12 + (0 if am else 12)
+    return hour, minute
+
+
 @dataclass
 class SpaState:
     display_text: str | None = None
@@ -69,6 +96,10 @@ class SpaState:
     last_frame_at: float | None = None
     last_water_temp_at: float | None = None
     last_set_point_at: float | None = None
+    clock: tuple[int, int] | None = None  # (hour, minute) last shown on the panel
+    clock_at: float | None = None
+    # message code -> (message, monotonic time last shown)
+    messages: dict[str, tuple[status_mod.Message, float]] = field(default_factory=dict)
 
 
 class DisplayTracker:
@@ -99,6 +130,12 @@ class DisplayTracker:
         if reading is None:
             if text.strip():
                 st.status_text = text
+                clock = parse_clock(text, st.indicators.get("am"))
+                if clock is not None:
+                    st.clock, st.clock_at = clock, now
+                message = status_mod.classify(text)
+                if message is not None:
+                    st.messages[message.code] = (message, now)
             # Blank text while in the window is a "flash off" of the set point.
             return st
         if self.in_setpoint_window():
@@ -108,3 +145,31 @@ class DisplayTracker:
             st.water_temp = reading
             st.last_water_temp_at = now
         return st
+
+    # ------------------------------------------------------------- messages
+    def current_messages(self, window: float = STATUS_WINDOW) -> list[status_mod.Message]:
+        """Messages shown within the last ``window`` seconds, newest first."""
+        now = self._clock()
+        recent = [(t, m) for m, t in self.state.messages.values() if now - t <= window]
+        return [m for _, m in sorted(recent, key=lambda x: x[0], reverse=True)]
+
+    def current_errors(self, window: float = STATUS_WINDOW) -> list[status_mod.Message]:
+        return [m for m in self.current_messages(window) if m.kind is status_mod.Kind.ERROR]
+
+    def status(self, window: float = STATUS_WINDOW) -> status_mod.Message | None:
+        """The most important current message: an error, then programming, then economy."""
+        current = self.current_messages(window)
+        for kind in (status_mod.Kind.ERROR, status_mod.Kind.PROGRAMMING, status_mod.Kind.ECONOMY):
+            for m in current:
+                if m.kind is kind:
+                    return m
+        return None
+
+    def estimated_clock(self) -> tuple[int, int] | None:
+        """The spa's time of day now, from the last time it was shown."""
+        st = self.state
+        if st.clock is None or st.clock_at is None:
+            return None
+        minutes = st.clock[0] * 60 + st.clock[1] + int((self._clock() - st.clock_at) // 60)
+        minutes %= 24 * 60
+        return minutes // 60, minutes % 60

@@ -31,6 +31,17 @@ AUTH_TIMEOUT = 8.0
 AUTH_GRACE = 1.0
 # The app waits 100 ms between subscriptions and 500 ms after connecting.
 STEP_DELAY = 0.1
+# After a key press, how long to wait for the indicator lights to change.
+# The light LED changed 48 ms after "l0" on a real spa.
+KEY_RESPONSE_TIMEOUT = 3.0
+# Extra wait after the lights change, so a multi-step change settles.
+KEY_SETTLE = 0.4
+# A device key cycles through at most 4 states (manual, table 1).
+MAX_CYCLE_PRESSES = 4
+
+
+class KeyCycleError(Exception):
+    """A device key did not reach the requested state."""
 
 
 class SpaAuthError(Exception):
@@ -63,6 +74,12 @@ class SpaClient:
         self._write_lock = asyncio.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._mmode_event = asyncio.Event()
+        self._leds_changed = asyncio.Event()
+        self._cycle_lock = asyncio.Lock()
+        # key -> list of (from_state, to_state) transitions seen after presses
+        self.observed_transitions: dict[str, list[tuple[str, str]]] = {}
+        # (hour, minute, time.monotonic()) of the last clock this integration sent.
+        self.commanded_clock: tuple[int, int, float] | None = None
         self.mmode: str | None = None
         self.version: dict | None = None
         # (value, unit, time.monotonic()) of the last set point this integration sent.
@@ -210,7 +227,19 @@ class SpaClient:
     def _handle_display(self, data: bytes) -> None:
         frame = p.parse_display(data)
         if frame is not None:
+            if frame.indicators != self.tracker.state.indicators:
+                self._leds_changed.set()
             self.tracker.update(frame.text, frame.indicators)
+
+    # ------------------------------------------------------------ key state
+    def key_state(self, key: p.Key) -> str | None:
+        """State of a device key from its Lo/Hi lights: off, low, high or low_high."""
+        lo_name, hi_name = p.KEY_LEDS[key]
+        leds = self.state.indicators
+        if lo_name not in leds:
+            return None
+        lo, hi = leds[lo_name], leds[hi_name]
+        return {(False, False): "off", (True, False): "low", (False, True): "high", (True, True): "low_high"}[(lo, hi)]
 
     # --------------------------------------------------------------- sending
     async def _write(self, uuid: str, data: bytes) -> None:
@@ -228,6 +257,53 @@ class SpaClient:
 
     async def press(self, key: p.Key) -> None:
         await self._write(p.CHAR_KEYBOARD, p.encode_key(key))
+
+    async def press_to_state(self, key: p.Key, target: str) -> None:
+        """Press ``key`` until its lights show ``target``.
+
+        Each press waits for the lights to change. It stops with KeyCycleError
+        if a press changes nothing, or if the key comes back to a state it
+        already showed (``target`` is not in this spa's cycle, or the heater
+        is holding the low pump on). It never presses more than
+        MAX_CYCLE_PRESSES times.
+        """
+        async with self._cycle_lock:
+            current = self.key_state(key)
+            if current is None:
+                raise KeyCycleError("Key state is not known yet (no display frame received)")
+            seen = [current]
+            for _ in range(MAX_CYCLE_PRESSES):
+                if current == target:
+                    return
+                self._leds_changed.clear()
+                await self.press(key)
+                try:
+                    await asyncio.wait_for(self._leds_changed.wait(), KEY_RESPONSE_TIMEOUT)
+                except TimeoutError:
+                    raise KeyCycleError(
+                        f"{key.value}: the lights did not change within {KEY_RESPONSE_TIMEOUT} s of a press"
+                    ) from None
+                await asyncio.sleep(KEY_SETTLE)
+                new = self.key_state(key)
+                self.observed_transitions.setdefault(key.value, []).append((current, new))
+                self._notify_listeners()
+                if new == current:
+                    raise KeyCycleError(f"{key.value}: the press did not change the {key.value} lights")
+                current = new
+                if current == target:
+                    return
+                if current in seen:
+                    raise KeyCycleError(
+                        f"{key.value}: {target} is not in this spa's cycle (seen: {' -> '.join([*seen, current])})"
+                    )
+                seen.append(current)
+            if current != target:
+                raise KeyCycleError(f"{key.value}: did not reach {target} in {MAX_CYCLE_PRESSES} presses")
+
+    async def set_clock(self, hour: int, minute: int) -> None:
+        payload = p.encode_time(hour, minute)  # validates before anything is sent
+        await self._write(p.CHAR_TIME, payload)
+        self.commanded_clock = (hour, minute, time.monotonic())
 
     async def set_temperature(self, value: float, unit: str) -> None:
         payload = p.encode_temperature(value, unit)  # validates before anything is sent

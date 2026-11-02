@@ -43,9 +43,20 @@ WRITE_WITH_RESPONSE = True
 class Key(StrEnum):
     """Keypad keys drawn by the app's spa layout (window.frames.spa).
 
+    The values are the app's own names. On the spa-side panel (ACC SmarTouch
+    Digital manual, KP-2000/2020 panel) they are, judging by where the app's
+    layout draws each key relative to its Lo/Hi indicator lights:
+
+    * ``jets``   JETS key, under the Jets Lo/Hi lights
+    * ``aux``    AIR key, under the Air Lo/Hi lights
+    * ``aux2``   AUX key, under the Jets 2 Lo/Hi lights
+    * ``light``  LITE key
+    * ``system`` SET key ("done using the spa")
+
     The app also defines u0/d0/u1/d1 (up, down, set-temp, set-time), but only
-    an unused layout draws them, so they are deliberately not exposed: we only
-    send what the shipping app sends. There is no filter key.
+    a layout it never loads draws them, so they are deliberately not exposed:
+    we only send what the shipping app sends. There is no filter key, and
+    there are no codes for key combinations (programming menus).
     """
 
     LIGHT = "light"
@@ -66,6 +77,29 @@ KEY_CODES: dict[Key, str] = {
 
 def encode_key(key: Key) -> bytes:
     return KEY_CODES[key].encode("ascii")
+
+
+# Indicator lights that show each device key's state: (Lo light, Hi light).
+# Pairing from the x positions of the keys and lights in window.frames.spa.
+KEY_LEDS: dict[Key, tuple[str, str]] = {
+    Key.JETS: ("jets_low", "jets_high"),
+    Key.AUX: ("air_low", "air_high"),
+    Key.AUX2: ("jets2_low", "jets2_high"),
+}
+
+
+# ---------------------------------------------------------------- clock (js/panel.js, js/transmitter.js)
+def encode_time(hour: int, minute: int) -> bytes:
+    """Encode the time of day the way the app's "Set Current Time" page does.
+
+    The page formats the time with toLocaleString(en-US, hour12) and
+    transmitter.parse_time() turns "7:45 PM" into "0745P": 12-hour clock,
+    hour and minute zero-padded to 2 digits, then "A" or "P".
+    """
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"invalid time {hour}:{minute}")
+    hour12 = hour % 12 or 12
+    return f"{hour12:02d}{minute:02d}{'A' if hour < 12 else 'P'}".encode("ascii")
 
 
 # ---------------------------------------------------------------- set point (js/panel.js)

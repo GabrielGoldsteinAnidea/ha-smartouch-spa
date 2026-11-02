@@ -112,3 +112,24 @@ def test_encode_display_roundtrip():
 def test_protected_characteristics():
     assert p.CHAR_MMODE in p.PROTECTED_CHARS
     assert p.CHAR_KEYBOARD not in p.PROTECTED_CHARS
+
+
+@pytest.mark.parametrize(
+    "hour,minute,expected",
+    [(19, 45, b"0745P"), (0, 5, b"1205A"), (12, 0, b"1200P"), (9, 30, b"0930A"), (23, 59, b"1159P")],
+)
+def test_encode_time_like_app(hour, minute, expected):
+    # panel.js send-time-value -> toLocaleString(en-US, hour12) -> transmitter.parse_time
+    assert p.encode_time(hour, minute) == expected
+
+
+@pytest.mark.parametrize("hour,minute", [(24, 0), (-1, 0), (12, 60)])
+def test_encode_time_rejects_invalid(hour, minute):
+    with pytest.raises(ValueError):
+        p.encode_time(hour, minute)
+
+
+def test_key_leds_cover_device_keys():
+    assert set(p.KEY_LEDS) == {p.Key.JETS, p.Key.AUX, p.Key.AUX2}
+    for lo, hi in p.KEY_LEDS.values():
+        assert lo in p.INDICATOR_BITS and hi in p.INDICATOR_BITS

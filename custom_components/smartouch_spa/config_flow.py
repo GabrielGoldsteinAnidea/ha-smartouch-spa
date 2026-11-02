@@ -18,8 +18,10 @@ from .const import (
     CONF_MCODE,
     CONF_PIN,
     CONF_SETPOINT_WINDOW,
+    CONF_SYNC_CLOCK,
     CONF_TEMP_UNIT,
     DEFAULT_SETPOINT_WINDOW,
+    DEFAULT_SYNC_CLOCK,
     DEFAULT_TEMP_UNIT,
     DOMAIN,
 )
@@ -125,6 +127,7 @@ class SmartouchSpaOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_SETPOINT_WINDOW, default=o.get(CONF_SETPOINT_WINDOW, DEFAULT_SETPOINT_WINDOW)
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=30)),
+                vol.Optional(CONF_SYNC_CLOCK, default=o.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK)): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

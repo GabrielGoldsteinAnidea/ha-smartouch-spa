@@ -18,13 +18,16 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .client import SpaAuthError, SpaClient
 from .const import (
     CONF_MCODE,
     CONF_PIN,
     CONF_SETPOINT_WINDOW,
+    CONF_SYNC_CLOCK,
     DEFAULT_SETPOINT_WINDOW,
+    DEFAULT_SYNC_CLOCK,
     DOMAIN,
     SERVICE_PRESS,
     SERVICE_SEND_RAW,
@@ -34,13 +37,16 @@ from .spa_core.protocol import Key
 _LOGGER = logging.getLogger(__name__)
 
 RECONNECT_INTERVAL = timedelta(seconds=30)
+CLOCK_SYNC_INTERVAL = timedelta(hours=24)
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.CLIMATE,
     Platform.LIGHT,
+    Platform.SELECT,
     Platform.SENSOR,
+    Platform.TIME,
 ]
 
 type SpaConfigEntry = ConfigEntry[SpaClient]
@@ -64,6 +70,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpaConfigEntry) -> bool:
         raise ConfigEntryAuthFailed(str(err)) from err
     except Exception as err:  # bleak raises many exception types
         raise ConfigEntryNotReady(f"Unable to connect to {address}: {err}") from err
+
+    sync_clock = bool(entry.options.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK))
+
+    async def _async_sync_clock(_now=None) -> None:
+        # The spa clock resets to 12:00 AM after a power cut and runs the
+        # filtration and silence periods, so keep it on Home Assistant's time.
+        if not client.authorized:
+            return
+        now = dt_util.now()
+        try:
+            await client.set_clock(now.hour, now.minute)
+        except Exception as err:
+            _LOGGER.debug("Clock sync for %s failed: %s", address, err)
+
+    if sync_clock:
+        await _async_sync_clock()
+        entry.async_on_unload(async_track_time_interval(hass, _async_sync_clock, CLOCK_SYNC_INTERVAL))
 
     @callback
     def _async_update_ble(service_info: bluetooth.BluetoothServiceInfoBleak, change) -> None:
@@ -89,6 +112,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpaConfigEntry) -> bool:
             return
         try:
             await client.ensure_connected()
+            if sync_clock:
+                await _async_sync_clock()
         except SpaAuthError as err:
             auth_rejected = True
             _LOGGER.warning("Spa %s rejected the PIN: %s", address, err)

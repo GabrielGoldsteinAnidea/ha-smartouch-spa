@@ -1,4 +1,8 @@
-"""Indicator LEDs from the display frame (names from the app's source)."""
+"""Indicator lights from the display frame, plus economy mode and problem state.
+
+Light names come from the app's source. Economy and Problem come from the
+messages the panel shows instead of the temperature (spa_core/status.py).
+"""
 
 from __future__ import annotations
 
@@ -17,12 +21,12 @@ INDICATORS: dict[str, tuple[BinarySensorDeviceClass | None, bool, bool]] = {
     "overheat": (BinarySensorDeviceClass.PROBLEM, True, False),
     "jets_low": (BinarySensorDeviceClass.RUNNING, True, False),
     "jets_high": (BinarySensorDeviceClass.RUNNING, True, False),
-    "jets2_low": (BinarySensorDeviceClass.RUNNING, False, False),
-    "jets2_high": (BinarySensorDeviceClass.RUNNING, False, False),
-    "air_low": (BinarySensorDeviceClass.RUNNING, False, False),
-    "air_high": (BinarySensorDeviceClass.RUNNING, False, False),
-    "edit": (None, False, True),
-    "am": (None, False, True),
+    "jets2_low": (BinarySensorDeviceClass.RUNNING, True, False),
+    "jets2_high": (BinarySensorDeviceClass.RUNNING, True, False),
+    "air_low": (BinarySensorDeviceClass.RUNNING, True, False),
+    "air_high": (BinarySensorDeviceClass.RUNNING, True, False),
+    "edit": (None, True, True),
+    "am": (None, True, True),
 }
 
 
@@ -31,7 +35,13 @@ async def async_setup_entry(
 ) -> None:
     client = entry.runtime_data
     address = entry.data[CONF_ADDRESS]
-    async_add_entities(IndicatorSensor(client, address, name, *cfg) for name, cfg in INDICATORS.items())
+    async_add_entities(
+        [
+            *(IndicatorSensor(client, address, name, *cfg) for name, cfg in INDICATORS.items()),
+            EconomySensor(client, address, "economy"),
+            ProblemSensor(client, address, "problem"),
+        ]
+    )
 
 
 class IndicatorSensor(SpaEntity, BinarySensorEntity):
@@ -47,3 +57,30 @@ class IndicatorSensor(SpaEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return self.client.state.indicators.get(self._led)
+
+
+class EconomySensor(SpaEntity, BinarySensorEntity):
+    """On while the panel is showing "ECon" (economy mode)."""
+
+    _attr_translation_key = "economy"
+    _attr_icon = "mdi:leaf"
+
+    @property
+    def is_on(self) -> bool:
+        return any(m.code == "economy" for m in self.client.tracker.current_messages())
+
+
+class ProblemSensor(SpaEntity, BinarySensorEntity):
+    """On while the panel shows an error code or the overheat light is lit."""
+
+    _attr_translation_key = "problem"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.client.tracker.current_errors()) or bool(self.client.state.indicators.get("overheat"))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        errors = self.client.tracker.current_errors()
+        return {"errors": [m.code for m in errors], "details": [m.description for m in errors]}

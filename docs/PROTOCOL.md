@@ -32,7 +32,7 @@ reproduce them. jadx is not needed for this app.
 | Fact | Status | Source |
 |---|---|---|
 | Service `c5a092a5-2202-4ac6-8734-2e8ff796094d` ("operation"). | Static | `js/connection.js:2` |
-| The module advertises that service UUID, because the app finds spas with a scan filtered on it. | Inferred | `js/navigation.js:923` `ble.startScan([SERVICE_UUID_OPERATION], ...)`. An Android scan filter on a service UUID only matches devices whose advertisement carries it. A PC scan on 2026-11-02 saw 28 devices and none of them advertised it, but the spa was probably out of range, so this is not yet cross-checked. |
+| The module advertises that service UUID. | Confirmed | The app finds spas with a scan filtered on it (`js/navigation.js:923` `ble.startScan([SERVICE_UUID_OPERATION], ...)`), and on 2026-11-02 Home Assistant's Bluetooth discovery, which matches only on that UUID (`manifest.json`), created the config entry (source `bluetooth`) through an ESPHome Bluetooth proxy. Before that: `js/navigation.js:923` `ble.startScan([SERVICE_UUID_OPERATION], ...)`. An Android scan filter on a service UUID only matches devices whose advertisement carries it. A PC scan on 2026-11-02 saw 28 devices and none of them advertised it, but the spa was probably out of range, so this is not yet cross-checked. |
 | Characteristics, all in that service: | Static | `js/connection.js:5-16` |
 
 | Name in app | UUID | Direction | Format |
@@ -69,7 +69,7 @@ real GATT property flags are not yet observed.
 | `pass` is the 4-digit PIN when typed on the PIN page. The phone that set the spa up (the "master") uses the PIN plus 8 random base64url characters (12 total). | Static | PIN page: `js/navigation.js:169-185` (`pass = ('000' + pass).slice(-4)`). Master setup: `:190-231` (`rndm` at `:208`, `pass = pass + rndm` just after). |
 | Strings longer than 19 chars are split into chunks: `"0" + first 19`, `"2" + next 19` for middle chunks, `"9" + rest`. A string of 19 chars or less is sent as one write with no flag. So a 16-char mcode + 4-digit PIN is sent as two writes: `"0" + 19 chars`, then `"9" + 1 char`. | Static | `js/navigation.js:1255-1268` `splitter()` and `:1283` `sendBleString_p()`. (`js/splitter.js` has a different splitter, but `index.html` never loads it.) |
 | `MMODE` notifications report the auth state: `F` = unprogrammed (setup page), `B` = PIN needed or wrong (PIN page), `M` = authorised as master, `N` = authorised as a normal user. The control page opens only on `M` or `N`. | Static | `js/navigation.js:361-366` |
-| A new device (such as Home Assistant) can authorise by sending its own mcode + the 4-digit PIN and should then receive `N`. | Inferred | That is exactly what a second phone does: it has no stored pass, gets `B`, and the PIN page sends `mcode + PIN` (`:169-185`). What the module then replies has not been observed. |
+| A new device (such as Home Assistant) can authorise by sending its own mcode + the 4-digit PIN, and receives `N`. | Confirmed | That is what a second phone does (`:169-185`), and on 2026-11-02 the module answered Home Assistant's own mcode + PIN with `MMODE` `4e` (`N`) (integration diagnostics; the PIN write is recorded as `<redacted>`). |
 | Writes to `MMODE` are module commands: `D` force disconnect, `R` restart in 5 s, `C` clear master code, `S` store new master, `Z`/`W` WiFi scan. **Home Assistant must never send `C`, `S` or `R`.** | Static | `js/navigation.js:226`, `:235`, `:240`, `:711`; `js/panel.js` WiFi page timer |
 | Both master and normal users get the temperature page. Only the master gets the share page and the setup buttons. | Static | `index.html` `master-spa-nav` / `normal-spa-nav`; `js/navigation.js` `prepare_main_page()` |
 
@@ -81,7 +81,9 @@ real GATT property flags are not yet observed.
 | Codes: `l0` light, `j0` jets, `a0` aux, `x0` aux2, `s0` system, `u0` up, `d0` down, `u1` set-temp, `d1` set-time. | Static | `js/panel.js:4-7` `buttons_codes` |
 | The spa panel this app version draws has only **Aux, Aux2, Jets, Light and System**. Up, Down, Set-temp and Set-time appear only in an unused `spa_bluetooth` layout. | Static | `window.frames.spa` in `js/constants/load_frames.js`. `prepare_main_page()` loads `spa`, not `spa_bluetooth`. |
 | **There is no Filter button.** Filtering appears only as an indicator LED. | Static | same; no `button-filter*` element exists in any layout |
-| What System, Aux and Aux2 do on this spa. | Unknown | Needs a live test on the panel |
+| Which panel key each code is: `j0` JETS, `a0` AIR, `x0` AUX, `l0` LITE, `s0` SET. | Inferred | In `window.frames.spa` the three upper keys sit at x≈37 (`aux`), 103 (`jets`) and 168 (`aux2`), directly under the Lo/Hi light pairs at x≈32 (`airhi`/`airlo`), 98 (`jetshi`/`jetslo`) and 163 (`jets2hi`/`jets2lo`). The SmarTouch Digital manuals name the panel keys LITE, AIR, JETS, AUX and SET. The fifth key (`system`, lower row next to Light) is taken to be SET because SET is the only remaining panel key. |
+| `l0` toggles the spa light and the light LED (byte 5 bit 4) follows it. | Confirmed | 2026-11-02: Home Assistant sent `6c 30`; the next display frame, 48 ms later, set byte 5 bit 4 (`... 00 10`), and the owner saw the light change. |
+| What `j0`, `a0`, `x0` and `s0` do on this spa, and in what order each device key cycles. | Unknown | The manual lists the possible cycles (single speed on/off; dual speed low/high/off; two AUX pumps P1, P1+2, P2, off). The owner reports two jet keys: one on/off, one that cycles through two sets of jets, which fits JETS (single speed) and AUX (two pumps). The integration's selects record every transition they see (`observed_transitions`). |
 
 ## Set temperature
 
@@ -96,13 +98,31 @@ real GATT property flags are not yet observed.
 | Fact | Status | Source |
 |---|---|---|
 | A display frame is a `DISPLAY` notification of 6 bytes. There is no header, length or checksum. The app converts it to 12 hex chars and ignores anything else. | Static | `js/navigation.js:325-334`; `js/panel.js:370-372` (`rx.length == 12`) |
-| Bytes 0-3 are the four digits. **Byte 0 is the rightmost digit**, byte 3 the leftmost. | Static (geometry) | Digit `d0` segment `a` sits at x≈156 and `d3` at x≈16 in `window.frames.spa`, so display text is bytes 3, 2, 1, 0 |
-| Segment bit order is bit0 = a ... bit6 = g, bit7 = a dot (`h`). | Static | `js/panel.js:334` `snames = [a..h]` and `:375` (`mm <<= 1`) |
+| Bytes 0-3 are the four digits. **Byte 0 is the rightmost digit**, byte 3 the leftmost. | Confirmed | 2026-11-02 frames `f1 7f 6f 00 ...` and `54 5c 39 79 ...` decode, in this order and bit layout, to ` 98°F` and `ECon`; ECON is a message the SmarTouch manual documents for economy mode. App geometry: Digit `d0` segment `a` sits at x≈156 and `d3` at x≈16 in `window.frames.spa`, so display text is bytes 3, 2, 1, 0 |
+| Segment bit order is bit0 = a ... bit6 = g, bit7 = a dot (`h`). | Confirmed | Same two real frames as above. App: `js/panel.js:334` `snames = [a..h]` and `:375` (`mm <<= 1`) |
 | The dot means something different at each position. Digits 3 and 2: a decimal point at the bottom right. Digit 1: a dot at the top left (with digit 2's dot it forms a colon, as in a clock). Digit 0: a degree sign at the top left of the unit letter. | Inferred | Ellipse positions of `digit-dN-sh` in `window.frames.spa`: d3/d2 at the `d` (bottom) row, d1/d0 at the `a` (top) row |
 | A first byte of `b9` (C plus dot) means the spa shows °C; `f1` (F plus dot) means °F. | Static | `js/panel.js:382-389` |
 | Byte 4 LEDs, bit0 upward: heating, air high, jets low, jets high, filtering, edit, overheat, AM. | Static | `js/panel.js:353-361` `segments[4]` |
 | Byte 5 LEDs: bits 0-3 unused; bit4 light, bit5 jets2 high, bit6 jets2 low, bit7 air low. | Static | `js/panel.js:363-367` and `:376` |
 | Which displayed temperature is the set point and which is the water temperature. The `edit` LED is a candidate for "showing the set point". | Unknown | Needs a live capture while changing the set point |
+
+## Clock
+
+| Fact | Status | Source |
+|---|---|---|
+| The app sets the spa's time of day by writing `HHMM` + `A`/`P` to `TIME`, 12-hour, zero-padded: 7:45 PM is `0745P`, 12:05 AM is `1205A`. | Static | `js/panel.js:207-214` (`send-time-value` formats with `toLocaleString("en-US", {hour12: true})`); `js/transmitter.js` `parse_time()` |
+| Normal (non-master) users can set the time: "Set Current Time on device" is the one Advanced Configurations entry without the `master-bt-buttons` class. | Static | `index.html` `adv-configs-page` |
+| The panel shows the time of day for the first 10 s of each minute once it is set; the clock resets to 12:00 AM after a power cut and drives the filtration and silence periods. | Reported | SmarTouch Digital Series 1000 & 2000 User & Programming Manual, pages 6 and 13-14 |
+| Whether this module shows the time on its display stream, and how. | Unknown | Not seen yet: the owner's clock may never have been set |
+
+## Messages on the display
+
+The manuals list the messages the panel shows instead of a temperature:
+`ECon` (economy mode), the error codes `CoLd`, `OH`, `HLoH`/`HLer`, `SEoP`,
+`SESH`, `PSoC`, `PSoL`, `PSoH`, `ToE`, and the programming-menu messages
+(`FP1`...`CANC`, `U1`-`U8`, `P1`-`P8`, `D1`-`D8`). `ECon` was seen on
+2026-11-02, once a minute, alternating with the temperature; the others are
+Reported only. `spa_core/status.py` holds the table, with page references.
 
 ## WiFi mode
 
@@ -115,11 +135,12 @@ real GATT property flags are not yet observed.
 
 ## Still unknown (needs the spa)
 
-1. Whether the module accepts Home Assistant's own mcode + PIN and replies `N`.
-2. What System, Aux and Aux2 do.
-3. How the display distinguishes set point from water temperature, and whether a `TEMPERATURE` write makes the display show the set point.
-4. Whether each LED bit means what its name in the app says, on this spa.
-5. Whether the module allows a second BLE connection while the phone is connected (assumed not).
+1. What `j0`, `a0`, `x0` and `s0` do on this spa, and each key's cycle.
+2. How the display distinguishes set point from water temperature, and whether a `TEMPERATURE` write makes the display show the set point.
+3. Whether each LED bit other than light means what its name in the app says, on this spa.
+4. Whether the module allows a second BLE connection while the phone is connected (assumed not).
+5. Whether a `TIME` write sets the clock, and whether the display stream shows the clock.
+6. Why the water temperature alternates between 98 and 99 °F every 1-10 s (sensor on a half-degree boundary, or the panel alternating two values).
 
 ## Assumptions currently built into the integration
 
@@ -127,4 +148,7 @@ real GATT property flags are not yet observed.
 2. **Home Assistant authenticates as a normal (`N`) user** with its own random mcode and the 4-digit PIN. This is inferred (see "Connection and authentication").
 3. **A temp change shows the set point for a few seconds** (default 5 s, configurable). Readings in that window after a `TEMPERATURE` write count as the set point, and other readings count as water temperature. Until the display shows a set point, the climate entity reports the last value it sent.
 4. **LED names are taken from the app.** The `light` entity uses the byte-5 bit-4 LED for its state and toggles with `l0`.
-5. **Only payloads the app's spa layout sends are exposed**: `l0`, `j0`, `a0`, `x0`, `s0`, and `TEMPERATURE` writes within 40-104 °F.
+5. **Only payloads the app's spa layout sends are exposed**: `l0`, `j0`, `a0`, `x0`, `s0`, `TEMPERATURE` writes within 40-104 °F, and `TIME` writes in the app's format.
+6. **Key states come from the Lo/Hi lights above each key** (see "Buttons"). The Jets, Air and Jets 2 selects press a key until its lights match, stop if a press changes nothing, and stop if the key returns to a state it already showed.
+7. **A message stays current for 90 s** after it was last shown, because `ECon` alternates with the temperature about once a minute.
+8. **"h:mm" with the colon lit is the time of day**, with the AM light for AM/PM.

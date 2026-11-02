@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 
 from . import SpaConfigEntry
 from .const import CONF_MCODE, CONF_PIN
+from .spa_core.protocol import KEY_LEDS
 
 TO_REDACT = {CONF_PIN, CONF_MCODE, CONF_ADDRESS}
 
@@ -32,7 +33,13 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: SpaConf
             "water_temp": asdict(st.water_temp) if st.water_temp else None,
             "set_point": asdict(st.set_point) if st.set_point else None,
             "commanded_set_point": client.commanded_set_point,
+            "clock": st.clock,
+            "commanded_clock": client.commanded_clock,
+            "status": None if client.tracker.status() is None else client.tracker.status().code,
+            "messages": [m.code for m in client.tracker.current_messages()],
+            "key_states": {k.value: client.key_state(k) for k in KEY_LEDS},
         },
+        "observed_transitions": client.observed_transitions,
         # The client never records MCODE contents, so these hold no PIN.
         "unique_payloads": {k: sorted(v) for k, v in client.unique_payloads.items()},
         "raw_frames": [f.as_dict() for f in client.raw_frames],

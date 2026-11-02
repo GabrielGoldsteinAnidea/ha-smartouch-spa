@@ -1,4 +1,4 @@
-"""Sensors: decoded display, water temperature, raw traffic (diagnostic)."""
+"""Sensors: decoded display, status message, water temperature, raw traffic (diagnostic)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from . import SpaConfigEntry
 from .const import CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT
 from .entity import SpaEntity
 from .spa_core.display import Unit
+from .spa_core.status import ERROR_CODES
+
+STATUS_OPTIONS = ["normal", "economy", "programming", *ERROR_CODES]
 
 
 def ha_unit(reading_unit: Unit | None, configured: str) -> str:
@@ -27,6 +30,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             DisplaySensor(client, address, "display"),
+            StatusSensor(client, address, "status"),
             WaterTempSensor(client, address, "water_temperature", unit),
             LastFrameSensor(client, address, "last_frame"),
             AuthStateSensor(client, address, "auth_state"),
@@ -46,6 +50,28 @@ class DisplaySensor(SpaEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         st = self.client.state
         return {"status_text": st.status_text}
+
+
+class StatusSensor(SpaEntity, SensorEntity):
+    """What the panel is doing: normal, economy, programming, or an error code."""
+
+    _attr_translation_key = "status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = STATUS_OPTIONS
+    _attr_icon = "mdi:information-outline"
+
+    @property
+    def native_value(self) -> str:
+        message = self.client.tracker.status()
+        return "normal" if message is None else message.code
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        message = self.client.tracker.status()
+        return {
+            "description": None if message is None else message.description,
+            "messages": [m.code for m in self.client.tracker.current_messages()],
+        }
 
 
 class WaterTempSensor(SpaEntity, SensorEntity):

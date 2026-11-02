@@ -6,13 +6,14 @@ WiFi/Bluetooth module, which is the hardware behind the "SmarTouch Digital"
 phone app. The repo also includes the tooling to reverse-engineer the app's
 protocol.
 
-> **Status: protocol mapped from the app's source, not yet tested on a spa.**
-> The app (version 1.1.2) is a Cordova app, so its protocol logic is readable
-> JavaScript. Every value the integration uses was taken from that code. What
-> the module does in reply has not been observed yet. See
-> [docs/PROTOCOL.md](docs/PROTOCOL.md) for each fact, its source and its
-> status, and [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) for
-> the capture procedure that will confirm them.
+> **Status: working on one spa, partly verified.** Sign-in with the PIN,
+> discovery, the display (water temperature and the ECON message) and the
+> light are confirmed on a real spa. The other controls follow the app's
+> source (version 1.1.2, a Cordova app with readable JavaScript) and the
+> SmarTouch manuals, and have not been seen working yet. See
+> [docs/PROTOCOL.md](docs/PROTOCOL.md) for each fact and its status, and
+> [docs/MANUAL_COVERAGE.md](docs/MANUAL_COVERAGE.md) for every manual feature
+> and whether Home Assistant can reach it.
 
 ## How it works
 
@@ -31,8 +32,17 @@ integration does what the app does:
 * **Set temperature directly.** The app writes the set point as text, such as
   `102F`, to its own characteristic. The integration sends exactly the values
   the app offers: 40-104 °F, or the app's matching °C values.
-* **Keys.** Light, Jets, Aux, Aux2 and System are single writes of a 2-letter
-  code. There is no Filter key in the app; filtering is an indicator only.
+* **Keys.** LITE, JETS, AIR, AUX and SET are single writes of a 2-letter
+  code (the app calls them light, jets, aux, aux2 and system). There is no
+  Filter key and no way to press two keys at once, so the panel's
+  programming menus (filtration periods, options) are out of reach.
+* **Key state from the lights.** Each device key sits under a Lo/Hi light
+  pair. The selects press a key until its lights match the option you pick,
+  and stop if the option is not in your spa's cycle.
+* **Clock.** The time of day is written in the app's format, from the
+  Spa clock entity, the Sync button, or automatically (an option).
+* **Messages.** ECON, the error codes and programming mode are read from
+  the display (`spa_core/status.py`).
 * **No setup commands.** The integration never sends the module commands
   that change its owner, name, WiFi or PIN. The raw-write service refuses
   those characteristics.
@@ -43,9 +53,13 @@ integration does what the app does:
 |---|---|
 | `climate` Thermostat | Water temperature, set point (direct write), and heating action from the heating LED. |
 | `light` Light | State from the light LED; turning it on or off presses the light key only when needed. |
-| `sensor` Water temperature, Display | The display text, e.g. `102°F`, `38.5°C`, `12:30`. |
-| `binary_sensor` Heating, Filtering, Overheat, Jets low/high | From the indicator LEDs. Jets 2, Air, Edit and AM exist too, disabled by default. |
-| `button` Jets | Aux, Aux 2 and System exist too, disabled by default until their function on your spa is known. |
+| `select` Jets, Jets 2, Air | Off / Lo / Hi / Lo + Hi from each key's lights; choosing one presses the key until the lights match. |
+| `time` Spa clock | Read from the display when shown; setting it writes the time. |
+| `sensor` Status | Normal, Economy, Programming, or an error code (CoLd, OH, HLoH, SEoP, SESH, PSoC/L/H, ToE) with a description. |
+| `sensor` Water temperature, Display | The display text, e.g. `102°F`, `ECon`, `12:30`. |
+| `binary_sensor` Economy mode, Problem | From the display messages and the overheat light. |
+| `binary_sensor` Heating, Filtering, Overheat, Jets/Jets 2/Air low and high, Edit, AM | From the indicator lights. |
+| `button` Jets key, Air key, Aux key, Set key (done using spa), Sync spa clock | One press each. |
 | `sensor` Last raw frame, Auth state | Diagnostic. |
 
 Services: `smartouch_spa.send_raw` (write hex bytes to a non-configuration
