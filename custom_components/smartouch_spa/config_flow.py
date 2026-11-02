@@ -1,7 +1,8 @@
-"""Config and options flow for SmarTouch Spa."""
+"""Config, reauth and options flow for SmarTouch Spa."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -14,22 +15,21 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 
 from .const import (
-    CONF_DISPLAY_LENGTH,
-    CONF_DISPLAY_OFFSET,
-    CONF_DISPLAY_PREFIX,
-    CONF_NOTIFY_UUID,
-    CONF_SEGMENT_ORDER,
+    CONF_MCODE,
+    CONF_PIN,
     CONF_SETPOINT_WINDOW,
     CONF_TEMP_UNIT,
-    CONF_WRITE_UUID,
-    CONF_WRITE_WITH_RESPONSE,
     DEFAULT_SETPOINT_WINDOW,
     DEFAULT_TEMP_UNIT,
     DOMAIN,
-    button_conf_key,
 )
-from .spa_core.profile import Button, parse_hex
-from .spa_core.seven_segment import SegmentMap
+from .spa_core.protocol import SERVICE_UUID, generate_mcode
+
+PIN_SCHEMA = vol.Schema({vol.Required(CONF_PIN): str})
+
+
+def _valid_pin(pin: str) -> bool:
+    return len(pin) == 4 and pin.isdigit()
 
 
 class SmartouchSpaConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -37,48 +37,35 @@ class SmartouchSpaConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._discovered: dict[str, str] = {}
-        self._discovery: BluetoothServiceInfoBleak | None = None
+        self._address: str | None = None
+        self._name: str | None = None
 
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> ConfigFlowResult:
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
-        self._discovery = discovery_info
-        self.context["title_placeholders"] = {"name": discovery_info.name or discovery_info.address}
-        return await self.async_step_bluetooth_confirm()
-
-    async def async_step_bluetooth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        assert self._discovery is not None
-        if user_input is not None:
-            return self.async_create_entry(
-                title=self._discovery.name or self._discovery.address,
-                data={CONF_ADDRESS: self._discovery.address},
-            )
-        self._set_confirm_only()
-        return self.async_show_form(
-            step_id="bluetooth_confirm",
-            description_placeholders={"name": self._discovery.name or self._discovery.address},
-        )
+        self._address = discovery_info.address
+        self._name = discovery_info.name or discovery_info.address
+        self.context["title_placeholders"] = {"name": self._name}
+        return await self.async_step_pin()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Pick any connectable BLE device.
+        """Pick a nearby module.
 
-        The module's advertised name/UUIDs are not known yet, so there is no
-        automatic matcher in manifest.json; the user picks the spa from all
-        nearby connectable devices (name shown when advertised).
+        Devices advertising the SmarTouch service are listed. If none do (the
+        advertisement has not been observed yet), all connectable devices are
+        listed instead.
         """
         if user_input is not None:
-            address = user_input[CONF_ADDRESS]
-            await self.async_set_unique_id(address, raise_on_progress=False)
+            self._address = user_input[CONF_ADDRESS]
+            self._name = self._discovered.get(self._address, self._address)
+            await self.async_set_unique_id(self._address, raise_on_progress=False)
             self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=self._discovered.get(address, address),
-                data={CONF_ADDRESS: address},
-            )
+            return await self.async_step_pin()
 
         current = self._async_current_ids(include_ignore=False)
-        for info in async_discovered_service_info(self.hass, connectable=True):
-            if info.address in current:
-                continue
+        infos = [i for i in async_discovered_service_info(self.hass, connectable=True) if i.address not in current]
+        matching = [i for i in infos if SERVICE_UUID in (u.lower() for u in i.service_uuids)]
+        for info in matching or infos:
             self._discovered[info.address] = f"{info.name or 'unknown'} ({info.address}, RSSI {info.rssi})"
         if not self._discovered:
             return self.async_abort(reason="no_devices_found")
@@ -87,60 +74,57 @@ class SmartouchSpaConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({vol.Required(CONF_ADDRESS): vol.In(self._discovered)}),
         )
 
+    async def async_step_pin(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if _valid_pin(user_input[CONF_PIN]):
+                return self.async_create_entry(
+                    title=self._name or self._address,
+                    data={
+                        CONF_ADDRESS: self._address,
+                        CONF_PIN: user_input[CONF_PIN],
+                        # Our own app code, like the one each phone install generates.
+                        CONF_MCODE: generate_mcode(),
+                    },
+                )
+            errors[CONF_PIN] = "invalid_pin"
+        return self.async_show_form(
+            step_id="pin",
+            data_schema=PIN_SCHEMA,
+            errors=errors,
+            description_placeholders={"name": self._name or ""},
+        )
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if _valid_pin(user_input[CONF_PIN]):
+                return self.async_update_reload_and_abort(
+                    self._get_reauth_entry(), data_updates={CONF_PIN: user_input[CONF_PIN]}
+                )
+            errors[CONF_PIN] = "invalid_pin"
+        return self.async_show_form(step_id="reauth_confirm", data_schema=PIN_SCHEMA, errors=errors)
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry) -> OptionsFlow:
         return SmartouchSpaOptionsFlow()
 
 
-def _validate(user_input: dict[str, Any]) -> dict[str, str]:
-    errors: dict[str, str] = {}
-    hex_keys = [CONF_DISPLAY_PREFIX] + [button_conf_key(b) for b in Button]
-    for key in hex_keys:
-        if user_input.get(key):
-            try:
-                parse_hex(user_input[key])
-            except ValueError:
-                errors[key] = "invalid_hex"
-    try:
-        SegmentMap.from_order(user_input.get(CONF_SEGMENT_ORDER) or "abcdefg.")
-    except ValueError:
-        errors[CONF_SEGMENT_ORDER] = "invalid_segment_order"
-    return errors
-
-
 class SmartouchSpaOptionsFlow(OptionsFlow):
-    """Protocol parameters, so findings can be tried without code changes."""
-
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
-            errors = _validate(user_input)
-            if not errors:
-                return self.async_create_entry(data=user_input)
-
-        o = user_input or dict(self.config_entry.options)
-
-        def opt_str(key: str) -> vol.Optional:
-            return vol.Optional(key, description={"suggested_value": o.get(key, "")})
-
-        schema: dict = {
-            opt_str(CONF_NOTIFY_UUID): str,
-            opt_str(CONF_WRITE_UUID): str,
-            vol.Optional(CONF_WRITE_WITH_RESPONSE, default=o.get(CONF_WRITE_WITH_RESPONSE, False)): bool,
-            opt_str(CONF_DISPLAY_PREFIX): str,
-            vol.Optional(CONF_DISPLAY_OFFSET, default=o.get(CONF_DISPLAY_OFFSET, 0)): vol.All(
-                vol.Coerce(int), vol.Range(min=0, max=512)
-            ),
-            vol.Optional(CONF_DISPLAY_LENGTH, default=o.get(CONF_DISPLAY_LENGTH, 0)): vol.All(
-                vol.Coerce(int), vol.Range(min=0, max=16)
-            ),
-            vol.Optional(CONF_SEGMENT_ORDER, default=o.get(CONF_SEGMENT_ORDER, "abcdefg.")): str,
-            vol.Optional(CONF_SETPOINT_WINDOW, default=o.get(CONF_SETPOINT_WINDOW, DEFAULT_SETPOINT_WINDOW)): vol.All(
-                vol.Coerce(float), vol.Range(min=0.5, max=30)
-            ),
-            vol.Optional(CONF_TEMP_UNIT, default=o.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT)): vol.In(["F", "C"]),
-        }
-        for button in Button:
-            schema[opt_str(button_conf_key(button))] = str
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema), errors=errors)
+            return self.async_create_entry(data=user_input)
+        o = dict(self.config_entry.options)
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_TEMP_UNIT, default=o.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT)): vol.In(["F", "C"]),
+                vol.Optional(
+                    CONF_SETPOINT_WINDOW, default=o.get(CONF_SETPOINT_WINDOW, DEFAULT_SETPOINT_WINDOW)
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=30)),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

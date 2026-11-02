@@ -29,4 +29,4 @@ class SpaEntity(Entity):
 
     @property
     def available(self) -> bool:
-        return self.client.connected
+        return self.client.authorized

@@ -6,17 +6,14 @@ send_raw:
           integration: smartouch_spa
     uuid:
       required: true
-      example: "0000ffe1-0000-1000-8000-00805f9b34fb"
+      example: "12ead13c-4d06-48b7-a3f9-cdf725acdd87"
       selector:
         text:
     data:
       required: true
-      example: "aa 01 02"
+      example: "6c 30"
       selector:
         text:
-    response:
-      selector:
-        boolean:
 press_button:
   fields:
     config_entry_id:
@@ -27,4 +24,4 @@ press_button:
       required: true
       selector:
         select:
-          options: [temp_up, temp_down, light, filter, jets]
+          options: [light, jets, aux, aux2, system]

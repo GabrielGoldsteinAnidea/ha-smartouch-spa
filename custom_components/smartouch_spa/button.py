@@ -1,9 +1,8 @@
-"""Button entities: one per keypad button.
+"""Button entities for the keypad keys the app draws for a spa.
 
-Buttons (not switches/lights) are used deliberately: the app only sends
-key presses, and whether light/filter on-off state can be read back from the
-display/indicator data is not known yet. Exposing a switch without real state
-feedback would report state we cannot verify.
+Light has its own light entity (state from the light LED), so it is not
+repeated here. What System, Aux and Aux2 do on a given spa is not known yet,
+so those are disabled by default.
 """
 
 from __future__ import annotations
@@ -11,19 +10,20 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import SpaConfigEntry
 from .entity import SpaEntity
-from .spa_core.profile import Button
+from .spa_core.protocol import Key
 
 ICONS = {
-    Button.TEMP_UP: "mdi:thermometer-chevron-up",
-    Button.TEMP_DOWN: "mdi:thermometer-chevron-down",
-    Button.LIGHT: "mdi:lightbulb",
-    Button.FILTER: "mdi:air-filter",
-    Button.JETS: "mdi:pump",
+    Key.JETS: "mdi:pump",
+    Key.AUX: "mdi:numeric-1-box-outline",
+    Key.AUX2: "mdi:numeric-2-box-outline",
+    Key.SYSTEM: "mdi:cog",
 }
+DISABLED_BY_DEFAULT = {Key.AUX, Key.AUX2, Key.SYSTEM}
 
 
 async def async_setup_entry(
@@ -31,19 +31,19 @@ async def async_setup_entry(
 ) -> None:
     client = entry.runtime_data
     address = entry.data[CONF_ADDRESS]
-    async_add_entities(SpaButton(client, address, b) for b in Button)
+    async_add_entities(SpaButton(client, address, k) for k in ICONS)
 
 
 class SpaButton(SpaEntity, ButtonEntity):
-    def __init__(self, client, address, button: Button) -> None:
-        super().__init__(client, address, f"button_{button.value}")
-        self._button = button
-        self._attr_translation_key = button.value
-        self._attr_icon = ICONS[button]
-
-    @property
-    def available(self) -> bool:
-        return super().available and self.client.profile.can_press(self._button)
+    def __init__(self, client, address, key: Key) -> None:
+        super().__init__(client, address, f"button_{key.value}")
+        self._key = key
+        self._attr_translation_key = key.value
+        self._attr_icon = ICONS[key]
+        self._attr_entity_registry_enabled_default = key not in DISABLED_BY_DEFAULT
 
     async def async_press(self) -> None:
-        await self.client.press(self._button)
+        try:
+            await self.client.press(self._key)
+        except Exception as err:
+            raise HomeAssistantError(f"Press failed: {err}") from err

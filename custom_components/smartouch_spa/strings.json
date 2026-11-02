@@ -3,76 +3,83 @@
     "flow_title": "{name}",
     "step": {
       "user": {
-        "description": "Pick the spa's BWF-200 module. Its advertised name is not known yet; it is usually the strongest unknown device near the spa. Close the SmarTouch app first, a BLE peripheral typically accepts only one connection.",
+        "description": "Pick the spa's BWF-200 module. Close the SmarTouch app first: the module probably accepts only one Bluetooth connection.",
         "data": { "address": "Device" }
       },
-      "bluetooth_confirm": { "description": "Set up {name}?" }
+      "pin": {
+        "description": "Enter the 4-digit PIN chosen when {name} was set up in the SmarTouch app. Home Assistant signs in the way a second phone does, using its own code plus this PIN. It sends no setup commands.",
+        "data": { "pin": "PIN" }
+      },
+      "reauth_confirm": {
+        "description": "The spa rejected the PIN. Enter the current 4-digit PIN.",
+        "data": { "pin": "PIN" }
+      }
+    },
+    "error": {
+      "invalid_pin": "The PIN must be exactly 4 digits"
     },
     "abort": {
       "already_configured": "Device is already configured",
-      "no_devices_found": "No connectable Bluetooth devices found"
+      "no_devices_found": "No connectable Bluetooth devices found",
+      "reauth_successful": "PIN updated"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Protocol parameters",
-        "description": "Leave UUIDs empty to stay in discovery mode (subscribe to every notifying characteristic and log raw frames). Fill these in from captures; see docs/REVERSE_ENGINEERING.md.",
+        "title": "Spa options",
         "data": {
-          "notify_uuid": "Display notify characteristic UUID",
-          "write_uuid": "Button write characteristic UUID",
-          "write_with_response": "Write with response",
-          "display_prefix": "Display frame prefix (hex, optional)",
-          "display_offset": "Offset of first digit byte",
-          "display_length": "Number of digit bytes",
-          "segment_order": "Segment bit order, bit0 upward (e.g. abcdefg.)",
-          "setpoint_window": "Seconds the set point stays shown after a temp press",
-          "temp_unit": "Temperature unit shown by the spa",
-          "button_temp_up": "Temp Up payload (hex)",
-          "button_temp_down": "Temp Down payload (hex)",
-          "button_light": "Light payload (hex)",
-          "button_filter": "Filter payload (hex)",
-          "button_jets": "Jets payload (hex)"
+          "temp_unit": "Temperature unit to assume until the display shows one",
+          "setpoint_window": "Seconds the set point stays shown after a change"
         }
       }
-    },
-    "error": {
-      "invalid_hex": "Not valid hex",
-      "invalid_segment_order": "Must contain each of a-g once; '.' for decimal point, 'x' for unused"
     }
   },
   "entity": {
     "sensor": {
       "display": { "name": "Display" },
       "water_temperature": { "name": "Water temperature" },
-      "last_frame": { "name": "Last raw frame" }
+      "last_frame": { "name": "Last raw frame" },
+      "auth_state": { "name": "Auth state" }
     },
     "button": {
-      "temp_up": { "name": "Temp up" },
-      "temp_down": { "name": "Temp down" },
-      "light": { "name": "Light" },
-      "filter": { "name": "Filter" },
-      "jets": { "name": "Jets" }
+      "jets": { "name": "Jets" },
+      "aux": { "name": "Aux" },
+      "aux2": { "name": "Aux 2" },
+      "system": { "name": "System" }
+    },
+    "light": { "light": { "name": "Light" } },
+    "binary_sensor": {
+      "led_heating": { "name": "Heating" },
+      "led_filtering": { "name": "Filtering" },
+      "led_overheat": { "name": "Overheat" },
+      "led_jets_low": { "name": "Jets low" },
+      "led_jets_high": { "name": "Jets high" },
+      "led_jets2_low": { "name": "Jets 2 low" },
+      "led_jets2_high": { "name": "Jets 2 high" },
+      "led_air_low": { "name": "Air low" },
+      "led_air_high": { "name": "Air high" },
+      "led_edit": { "name": "Edit indicator" },
+      "led_am": { "name": "AM indicator" }
     },
     "climate": { "thermostat": { "name": "Thermostat" } }
   },
   "services": {
     "send_raw": {
       "name": "Send raw bytes",
-      "description": "Write raw bytes to a GATT characteristic (reverse engineering).",
+      "description": "Write raw bytes to a GATT characteristic (reverse engineering). Writes that change the module's configuration are refused.",
       "fields": {
         "config_entry_id": { "name": "Spa", "description": "Spa to use (optional if only one)." },
         "uuid": { "name": "Characteristic UUID", "description": "Characteristic to write." },
-        "data": { "name": "Data", "description": "Hex bytes." },
-        "response": { "name": "With response", "description": "Use write-with-response." }
+        "data": { "name": "Data", "description": "Hex bytes." }
       }
     },
     "press_button": {
       "name": "Press button",
-      "description": "Press a configured keypad button.",
+      "description": "Press a keypad key.",
       "fields": {
         "config_entry_id": { "name": "Spa", "description": "Spa to use (optional if only one)." },
-        "button": { "name": "Button", "description": "Button to press." }
+        "button": { "name": "Button", "description": "Key to press." }
       }
     }
   }

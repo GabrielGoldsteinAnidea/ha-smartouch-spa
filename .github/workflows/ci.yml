@@ -10,7 +10,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install homeassistant pytest pytest-asyncio ruff
+      - run: pip install homeassistant bleak bleak-retry-connector pytest pytest-asyncio ruff
       - run: ruff check . && ruff format --check .
       - run: pytest -q
   hassfest:

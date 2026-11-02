@@ -10,26 +10,38 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
 
-from .client import SpaClient
+from .client import SpaAuthError, SpaClient
 from .const import (
+    CONF_MCODE,
+    CONF_PIN,
     CONF_SETPOINT_WINDOW,
     DEFAULT_SETPOINT_WINDOW,
     DOMAIN,
     SERVICE_PRESS,
     SERVICE_SEND_RAW,
-    profile_from_options,
 )
-from .spa_core.profile import Button, parse_hex
+from .spa_core.protocol import Key
 
 _LOGGER = logging.getLogger(__name__)
 
 RECONNECT_INTERVAL = timedelta(seconds=30)
 
-PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.CLIMATE, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.CLIMATE,
+    Platform.LIGHT,
+    Platform.SENSOR,
+]
 
 type SpaConfigEntry = ConfigEntry[SpaClient]
 
@@ -42,11 +54,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpaConfigEntry) -> bool:
 
     client = SpaClient(
         ble_device,
-        profile_from_options(dict(entry.options)),
+        entry.data[CONF_MCODE],
+        entry.data[CONF_PIN],
         float(entry.options.get(CONF_SETPOINT_WINDOW, DEFAULT_SETPOINT_WINDOW)),
     )
     try:
         await client.ensure_connected()
+    except SpaAuthError as err:
+        raise ConfigEntryAuthFailed(str(err)) from err
     except Exception as err:  # bleak raises many exception types
         raise ConfigEntryNotReady(f"Unable to connect to {address}: {err}") from err
 
@@ -63,11 +78,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpaConfigEntry) -> bool:
         )
     )
 
+    auth_rejected = False
+
     async def _async_reconnect(_now) -> None:
-        if client.connected:
+        nonlocal auth_rejected
+        # After a rejection, stop resending the PIN until the user re-enters it
+        # (reauth reloads the entry). Whether the module locks out repeated
+        # wrong PINs is unknown.
+        if client.authorized or auth_rejected:
             return
         try:
             await client.ensure_connected()
+        except SpaAuthError as err:
+            auth_rejected = True
+            _LOGGER.warning("Spa %s rejected the PIN: %s", address, err)
+            entry.async_start_reauth(hass)
         except Exception as err:
             _LOGGER.debug("Reconnect to %s failed: %s", address, err)
 
@@ -107,20 +132,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
     async def send_raw(call: ServiceCall) -> None:
         client = _client_for(hass, call.data.get("config_entry_id"))
         try:
-            data = parse_hex(call.data["data"])
+            data = bytes.fromhex(call.data["data"].replace(" ", "").replace(":", ""))
         except ValueError as err:
             raise ServiceValidationError(f"Invalid hex: {err}") from err
         try:
-            await client.write_raw(call.data["uuid"], data, call.data.get("response"))
+            await client.write_raw(call.data["uuid"], data)
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
         except Exception as err:
             raise HomeAssistantError(f"Write failed: {err}") from err
 
     async def press_button(call: ServiceCall) -> None:
         client = _client_for(hass, call.data.get("config_entry_id"))
         try:
-            await client.press(Button(call.data["button"]))
-        except ValueError as err:
-            raise ServiceValidationError(str(err)) from err
+            await client.press(Key(call.data["button"]))
+        except Exception as err:
+            raise HomeAssistantError(f"Press failed: {err}") from err
 
     hass.services.async_register(
         DOMAIN,
@@ -131,7 +158,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Optional("config_entry_id"): cv.string,
                 vol.Required("uuid"): cv.string,
                 vol.Required("data"): cv.string,
-                vol.Optional("response"): cv.boolean,
             }
         ),
     )
@@ -142,7 +168,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Optional("config_entry_id"): cv.string,
-                vol.Required("button"): vol.In([b.value for b in Button]),
+                vol.Required("button"): vol.In([k.value for k in Key]),
             }
         ),
     )

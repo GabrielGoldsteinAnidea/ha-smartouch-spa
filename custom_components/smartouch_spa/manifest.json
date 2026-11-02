@@ -1,6 +1,12 @@
 {
   "domain": "smartouch_spa",
   "name": "SmarTouch Spa",
+  "bluetooth": [
+    {
+      "service_uuid": "c5a092a5-2202-4ac6-8734-2e8ff796094d",
+      "connectable": true
+    }
+  ],
   "codeowners": ["@GabrielGoldsteinAnidea"],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
@@ -9,5 +15,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/GabrielGoldsteinAnidea/ha-smartouch-spa/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

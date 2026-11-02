@@ -29,6 +29,7 @@ async def async_setup_entry(
             DisplaySensor(client, address, "display"),
             WaterTempSensor(client, address, "water_temperature", unit),
             LastFrameSensor(client, address, "last_frame"),
+            AuthStateSensor(client, address, "auth_state"),
         ]
     )
 
@@ -44,7 +45,7 @@ class DisplaySensor(SpaEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         st = self.client.state
-        return {"status_text": st.status_text, "discovery_mode": self.client.discovery_mode}
+        return {"status_text": st.status_text}
 
 
 class WaterTempSensor(SpaEntity, SensorEntity):
@@ -57,7 +58,7 @@ class WaterTempSensor(SpaEntity, SensorEntity):
         self._unit = unit
 
     @property
-    def native_value(self) -> int | None:
+    def native_value(self) -> float | None:
         wt = self.client.state.water_temp
         return None if wt is None else wt.value
 
@@ -88,3 +89,19 @@ class LastFrameSensor(SpaEntity, SensorEntity):
             return {}
         f = self.client.raw_frames[-1]
         return {"uuid": f.uuid, "length": len(f.data), "frames_seen": len(self.client.raw_frames)}
+
+
+class AuthStateSensor(SpaEntity, SensorEntity):
+    """MMODE reported by the module: M master, N normal user, B PIN rejected, F not set up."""
+
+    _attr_translation_key = "auth_state"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:shield-key"
+
+    @property
+    def available(self) -> bool:
+        return self.client.connected
+
+    @property
+    def native_value(self) -> str | None:
+        return self.client.mmode
