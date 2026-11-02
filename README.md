@@ -40,7 +40,7 @@ integration does what the app does:
   pair. The selects press a key until its lights match the option you pick,
   and stop if the option is not in your spa's cycle.
 * **Clock.** The time of day is written in the app's format, from the
-  Spa clock entity, the Sync button, or automatically (an option).
+  Clock entity, the Sync clock button, or automatically (an option).
 * **Messages.** ECON, the error codes and programming mode are read from
   the display (`spa_core/status.py`).
 * **No setup commands.** The integration never sends the module commands
@@ -54,12 +54,12 @@ integration does what the app does:
 | `climate` Thermostat | Water temperature, set point (direct write), and heating action from the heating LED. |
 | `light` Light | State from the light LED; turning it on or off presses the light key only when needed. |
 | `select` Jets, Jets 2, Air | Off / Lo / Hi / Lo + Hi from each key's lights; choosing one presses the key until the lights match. |
-| `time` Spa clock | Read from the display when shown; setting it writes the time. |
+| `time` Clock | Read from the display when shown; setting it writes the time. |
 | `sensor` Status | Normal, Economy, Programming, or an error code (CoLd, OH, HLoH, SEoP, SESH, PSoC/L/H, ToE) with a description. |
 | `sensor` Water temperature, Display | The display text, e.g. `102°F`, `ECon`, `12:30`. |
 | `binary_sensor` Economy mode, Problem | From the display messages and the overheat light. |
 | `binary_sensor` Heating, Filtering, Overheat, Jets/Jets 2/Air low and high, Edit, AM | From the indicator lights. |
-| `button` Jets key, Air key, Aux key, Set key (done using spa), Sync spa clock | One press each. |
+| `button` Jets key, Air key, Aux key, Set key (done using spa), Sync clock | One press each. |
 | `sensor` Last raw frame, Auth state | Diagnostic. |
 
 Services: `smartouch_spa.send_raw` (write hex bytes to a non-configuration

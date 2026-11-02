@@ -22,8 +22,8 @@ but it has not yet been seen working on the owner's spa.
 | Set temperature, 40-104 °F (or the matching °C) | User 4; Prog 5, 10 | `climate.spa` target temperature | Unverified: the write is the app's, the display has not yet shown a set point |
 | Water temperature display | User 3-4 | `climate.spa` current temperature, `sensor.spa_water_temperature` | Confirmed (98 °F decoded on 2026-11-02) |
 | °F or °C display (option U6) | Prog 18 | Follows the unit the display shows | Unverified for °C |
-| Time of day: set it (hold TIME) | User 5; Prog 6 | `time.spa_spa_clock` (set), **Sync spa clock** button, optional daily sync in the integration's options | Unverified: written in the app's format, not yet seen applied |
-| Time of day shown each minute | Prog 6 | `time.spa_spa_clock` reads it from the display | Unverified: not seen yet, the clock may never have been set |
+| Time of day: set it (hold TIME) | User 5; Prog 6 | **Clock** time entity (set), **Sync clock** button, optional daily sync in the integration's options | Unverified: written in the app's format, not yet seen applied |
+| Time of day shown each minute | Prog 6 | the **Clock** entity reads it from the display | Unverified: not seen yet, the clock may never have been set |
 | JETS key: low, high, off (dual speed) or on, off (single speed) | User 6-7; Prog 7-9 | **Jets** select (Off / Lo / Hi) from the Jets Lo/Hi lights, **Jets key** button | Unverified |
 | AUX key: second pump, or two pumps cycling P1, P1+2, P2, off | User 6; Prog 8-9 | **Jets 2** select (Off / Lo / Hi / Lo + Hi) from the Jets 2 lights, **Aux key** button | Unverified |
 | AIR key: air blower on/off (or a single-speed second pump) | User 6-7; Prog 8-9 | **Air** select from the Air Lo/Hi lights, **Air key** button | Unverified |
