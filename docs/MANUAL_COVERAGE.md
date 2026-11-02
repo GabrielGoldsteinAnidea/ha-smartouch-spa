@@ -6,6 +6,11 @@ integration offers. It was checked against two manuals:
 * **User Manual**: SmarTouch Digital User Manual, Rev. 05/2017-ACC (KP-2020 panel, WiFi section).
 * **Programming Manual**: SmarTouch Digital Series 1000 & 2000 User & Programming Manual.
 
+**Air and Jets 2 may be swapped.** The app's two spa keypad layouts disagree
+on whether the `a0` key sits under the Air lights or the Jets 2 lights
+(docs/PROTOCOL.md, "Buttons"). The selects use the layout the app loads; a
+press test on the spa settles it.
+
 The integration can only send what the SmarTouch app sends over Bluetooth
 (docs/PROTOCOL.md): one press of LITE, JETS, AIR, AUX or SET, a set point,
 and the time of day. It cannot press two keys together or use the UP and
@@ -66,9 +71,12 @@ None has been seen on the owner's spa, so all are Unverified.
 
 ## Not reachable from Home Assistant
 
-These need key combinations (SET+DOWN, UP+DOWN, SET+UP) or the UP and DOWN
-keys, and the SmarTouch app has no Bluetooth codes for them. Set them on the
-spa-side panel.
+These need two keys pressed together: SET+DOWN opens the parameter menu,
+UP+DOWN opens the options menu, SET+UP inverts the display. The app's
+Bluetooth key codes are single taps only: LITE, JETS, AIR, AUX, SET, and in
+a layout the app never loads, UP, DOWN, hold TEMP and hold TIME. None of them
+is a combination, so the menus cannot be opened, read or changed from Home
+Assistant with known codes. Set these on the spa-side panel.
 
 | Manual feature | Pages |
 |---|---|

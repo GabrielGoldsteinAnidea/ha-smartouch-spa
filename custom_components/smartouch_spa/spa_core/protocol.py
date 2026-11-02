@@ -44,14 +44,16 @@ class Key(StrEnum):
     """Keypad keys drawn by the app's spa layout (window.frames.spa).
 
     The values are the app's own names. On the spa-side panel (ACC SmarTouch
-    Digital manual, KP-2000/2020 panel) they are, judging by where the app's
-    layout draws each key relative to its Lo/Hi indicator lights:
+    Digital manual, KP-2000/2020 panel):
 
     * ``jets``   JETS key, under the Jets Lo/Hi lights
-    * ``aux``    AIR key, under the Air Lo/Hi lights
-    * ``aux2``   AUX key, under the Jets 2 Lo/Hi lights
+    * ``aux``    AIR key under the Air lights in the loaded ``spa`` layout,
+      but under the Jets 2 lights in the unused ``spa_bluetooth`` layout
+    * ``aux2``   AUX key, the other way round
     * ``light``  LITE key
     * ``system`` SET key ("done using the spa")
+
+    docs/PROTOCOL.md has the positions. Only a press test settles aux/aux2.
 
     The app also defines u0/d0/u1/d1 (up, down, set-temp, set-time), but only
     a layout it never loads draws them, so they are deliberately not exposed:
@@ -80,7 +82,8 @@ def encode_key(key: Key) -> bytes:
 
 
 # Indicator lights that show each device key's state: (Lo light, Hi light).
-# Pairing from the x positions of the keys and lights in window.frames.spa.
+# Pairing from the positions of the keys and lights in window.frames.spa.
+# window.frames.spa_bluetooth swaps aux and aux2; unconfirmed until tested.
 KEY_LEDS: dict[Key, tuple[str, str]] = {
     Key.JETS: ("jets_low", "jets_high"),
     Key.AUX: ("air_low", "air_high"),
