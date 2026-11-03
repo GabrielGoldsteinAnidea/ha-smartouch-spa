@@ -121,7 +121,8 @@ real GATT property flags are not yet observed.
 | The owner's options: U1-U8 all 0; P1 1, P2 1, P3 0, P4 0, P5 0, P6 0, P7 0, P8 1. | Confirmed | Same session. |
 | A parameter's value shows after SET on it; times show `h:mm` with the AM light. | Reported | Manuals pages 13-14. Not yet seen on this spa. |
 | The same panel key moved backwards through the parameter menu and forwards through the options menu in the owner's session. | Observed | Same session. The takeover therefore learns UP's direction for each menu from its first press. |
-| `u0` and `d0` act as UP and DOWN inside a menu. | Unknown | They are in the app's `buttons_codes`, but the shipping app never sends them. The menu takeover is their first use and checks every press. |
+| `u0` does **not** move the options menu. | Confirmed | 2026-11-02 20:07:36: the armed takeover sent `75 30` with the options menu open on CAnC; the display stayed on CAnC until the panel closed the menu 30 s later. The module accepted the write (no error). |
+| Whether `d0` moves a menu. | Unknown | Next test. The takeover now tries the other key when one does nothing, and navigates the circular menu with whichever key works. |
 
 ## Flashing lights
 

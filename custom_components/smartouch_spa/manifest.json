@@ -15,5 +15,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/GabrielGoldsteinAnidea/ha-smartouch-spa/issues",
   "requirements": [],
-  "version": "0.4.1"
+  "version": "0.4.2"
 }

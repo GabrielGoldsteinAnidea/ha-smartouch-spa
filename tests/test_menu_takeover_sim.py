@@ -181,3 +181,39 @@ def test_unexpected_menu_position_stops(monkeypatch):
         assert sim.saved is None
 
     run(monkeypatch, sim, body)
+
+
+class DeadKeySim(MenuSim):
+    """A panel that ignores some codes, like u0 on the owner's spa (2026-11-02)."""
+
+    def __init__(self, *args, dead=("u0",), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dead = set(dead)
+
+    def key(self, code):
+        if code in self.dead:
+            return  # nothing happens, no frame
+        super().key(code)
+
+
+def test_takeover_goes_round_with_down_only(monkeypatch):
+    sim = DeadKeySim(menus.Menu.OPTIONS, "CAnC", OPTION_VALUES)
+
+    async def body(c):
+        done = await c.apply_settings({"U4": 1})
+        assert done == ["U4"] and sim.saved["U4"] == 1
+        assert p.MENU_UP in c.dead_menu_keys and p.MENU_DOWN not in c.dead_menu_keys
+        assert any("u0 did not move" in line for line in c.menu_log)
+
+    run(monkeypatch, sim, body)
+
+
+def test_takeover_stops_when_no_key_moves(monkeypatch):
+    sim = DeadKeySim(menus.Menu.OPTIONS, "CAnC", OPTION_VALUES, dead=("u0", "d0"))
+
+    async def body(c):
+        with pytest.raises(client_mod.MenuError, match="neither UP"):
+            await c.apply_settings({"U4": 1})
+        assert sim.saved is None
+
+    run(monkeypatch, sim, body)

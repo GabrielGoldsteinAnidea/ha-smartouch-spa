@@ -28,7 +28,7 @@ from .spa_core.display import DisplayTracker, SpaState
 
 _LOGGER = logging.getLogger(__name__)
 
-RAW_HISTORY = 200
+RAW_HISTORY = 1500
 AUTH_TIMEOUT = 8.0
 AUTH_GRACE = 1.0
 # The app waits 100 ms between subscriptions and 500 ms after connecting.
@@ -102,8 +102,10 @@ class SpaClient:
         self.on_settings_changed: Callable[[], None] | None = None
         self.equipment = None  # spa_core.equipment.Equipment, set by the integration
         self._display_event = asyncio.Event()
-        # menu -> True if UP moves to the next item, learnt from the first press
-        self._up_forward: dict[menus.Menu, bool] = {}
+        # (menu, key) -> +1 / -1: which way a key moves through a menu, learnt as it goes
+        self._key_dir: dict[tuple[menus.Menu, bytes], int] = {}
+        # UP/DOWN codes seen to do nothing in a menu on this panel
+        self.dead_menu_keys: set[bytes] = set()
         self.menu_log: deque[str] = deque(maxlen=60)
         # time.monotonic() until which a menu opened at the panel is taken over at once
         self.auto_takeover_until: float | None = None
@@ -455,64 +457,82 @@ class SpaClient:
             await self._wait_display(lambda: not self.menu.open, MENU_CLOSE_TIMEOUT, "the menu to close after SEnd")
             return done
 
+    def _alive_keys(self) -> list[bytes]:
+        return [k for k in (p.MENU_UP, p.MENU_DOWN) if k not in self.dead_menu_keys]
+
+    async def _menu_try(self, key: bytes, cur: str | None) -> bool:
+        """Press ``key`` and wait for the menu to move off ``cur``. False if it did not move."""
+        await self._menu_press(key)
+        return await self._wait_until(
+            lambda: self.menu.label is not None and self.menu.label.code != cur, MENU_RESPONSE_TIMEOUT
+        )
+
+    def _mark_dead(self, key: bytes, cur: str | None) -> None:
+        # On the owner's spa u0 did not move the options menu (2026-11-02).
+        self.dead_menu_keys.add(key)
+        self.menu_log.append(f"{key.decode()} did not move the menu off {cur}")
+        if not self._alive_keys():
+            raise MenuError("neither UP (u0) nor DOWN (d0) moves the menu on this panel")
+
     async def _identify_menu(self) -> menus.Menu:
-        """The menu opened on SEnd or CAnC, which both menus have: press UP until it shows."""
+        """The menu opened on SEnd or CAnC, which both menus have: step until it shows."""
         trail = [self._label_code()]
-        for _ in range(3):
-            cur = trail[-1]
-            await self._menu_press(p.MENU_UP)
-            await self._wait_display(
-                lambda cur=cur: self.menu.label is not None and self.menu.label.code != cur,
-                MENU_RESPONSE_TIMEOUT,
-                f"the menu to move off {cur}",
-            )
+        used: bytes | None = None
+        for _ in range(5):
+            alive = self._alive_keys()
+            if not alive:
+                break
+            key = used if used in alive else alive[0]
+            if not await self._menu_try(key, trail[-1]):
+                self._mark_dead(key, trail[-1])
+                continue
+            used = key
             trail.append(self._label_code())
             menu = self.menu.label.menu
             if menu is None:
                 continue
-            # Which way did UP go? Check the trail against the menu's order.
             order = menus.ORDER[menu]
             idx = [order.index(c) for c in trail]
             steps = {(b - a) % len(order) for a, b in itertools.pairwise(idx)}
             if steps == {1}:
-                self._up_forward[menu] = True
+                self._key_dir[(menu, key)] = 1
             elif steps == {len(order) - 1}:
-                self._up_forward[menu] = False
+                self._key_dir[(menu, key)] = -1
             else:
-                raise MenuError(f"UP moved {' -> '.join(trail)}, which fits neither menu")
+                raise MenuError(f"{key.decode()} moved {' -> '.join(trail)}, which fits neither menu")
             return menu
-        raise MenuError(f"could not tell which menu is open ({' -> '.join(trail)})")
+        raise MenuError(f"could not tell which menu is open ({' -> '.join(map(str, trail))})")
 
     async def _menu_goto(self, menu: menus.Menu, target: str) -> None:
+        """Step to ``target``. Uses whichever of UP/DOWN moves the menu; the menu is circular."""
         order = menus.ORDER[menu]
-        for _ in range(len(order) + 2):
+        n = len(order)
+        for _ in range(2 * n + 2):
             cur = self._label_code()
             if cur is None:
                 raise MenuError("lost track of the menu")
             if cur == target:
                 return
-            nxt, prv = menus.neighbours(menu, cur)
-            forward = (order.index(target) - order.index(cur)) % len(order) <= len(order) // 2
-            up_fwd = self._up_forward.get(menu)
-            use_up = True if up_fwd is None else (forward == up_fwd)
-            await self._menu_press(p.MENU_UP if use_up else p.MENU_DOWN)
-            await self._wait_display(
-                lambda cur=cur: self.menu.label is not None and self.menu.label.code != cur,
-                MENU_RESPONSE_TIMEOUT,
-                f"the menu to move off {cur}",
-            )
-            new = self._label_code()
-            if up_fwd is None:
-                if new == nxt:
-                    self._up_forward[menu] = True
-                elif new == prv:
-                    self._up_forward[menu] = False
-                else:
-                    raise MenuError(f"UP moved from {cur} to {new}, expected {nxt} or {prv}")
+            want = 1 if (order.index(target) - order.index(cur)) % n <= n // 2 else -1
+            alive = self._alive_keys()
+            known = [k for k in alive if self._key_dir.get((menu, k)) == want]
+            unknown = [k for k in alive if (menu, k) not in self._key_dir]
+            key = (known or unknown or alive)[0]
+            if not await self._menu_try(key, cur):
+                self._mark_dead(key, cur)
                 continue
-            expected = nxt if use_up == up_fwd else prv
-            if new != expected:
-                raise MenuError(f"moved from {cur} to {new}, expected {expected}")
+            new = self._label_code()
+            nxt, prv = menus.neighbours(menu, cur)
+            if new == nxt:
+                moved = 1
+            elif new == prv:
+                moved = -1
+            else:
+                raise MenuError(f"{key.decode()} moved from {cur} to {new}, expected {nxt} or {prv}")
+            seen = self._key_dir.get((menu, key))
+            if seen is not None and seen != moved:
+                raise MenuError(f"{key.decode()} moved the other way this time ({cur} -> {new})")
+            self._key_dir[(menu, key)] = moved
         raise MenuError(f"could not reach {target}")
 
     async def _menu_set(self, code: str, target) -> None:
@@ -566,7 +586,10 @@ class SpaClient:
             if value == target:
                 return
             want_up = target > value if modulo is None else (target - value) % modulo <= modulo // 2
-            await self._menu_press(p.MENU_UP if want_up == up_increases else p.MENU_DOWN)
+            key = p.MENU_UP if want_up == up_increases else p.MENU_DOWN
+            if key in self.dead_menu_keys:
+                raise MenuError(f"{code}: changing it needs {key.decode()}, which does not work on this panel")
+            await self._menu_press(key)
             old = value
             await self._wait_display(
                 lambda old=old: self.menu.value is not None and part(self.menu.value) != old,
