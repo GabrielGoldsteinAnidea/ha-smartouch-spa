@@ -28,6 +28,11 @@ ICONS = {
     Key.AUX: "mdi:chart-bubble",
     Key.AUX2: "mdi:pump",
     Key.SYSTEM: "mdi:check-circle-outline",
+    # Codes the shipping app never sends (see Key): for trying by hand.
+    Key.UP: "mdi:chevron-up",
+    Key.DOWN: "mdi:chevron-down",
+    Key.SET_TEMP: "mdi:thermometer-chevron-up",
+    Key.SET_TIME: "mdi:clock-edit-outline",
 }
 
 

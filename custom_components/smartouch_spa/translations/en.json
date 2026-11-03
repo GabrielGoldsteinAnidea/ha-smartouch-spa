@@ -94,6 +94,18 @@
       "system": {
         "name": "Set key (done using spa)"
       },
+      "up": {
+        "name": "Up key (u0, untested)"
+      },
+      "down": {
+        "name": "Down key (d0, untested)"
+      },
+      "set_temp": {
+        "name": "Set-temp key (u1, untested)"
+      },
+      "set_time": {
+        "name": "Set-time key (d1, untested)"
+      },
       "sync_clock": {
         "name": "Sync clock"
       },
@@ -226,7 +238,7 @@
     },
     "press_button": {
       "name": "Press button",
-      "description": "Press a keypad key once. light = LITE, jets = JETS, aux = AIR, aux2 = AUX, system = SET (the app's names).",
+      "description": "Press a keypad key once. light = LITE, jets = JETS, aux = AIR, aux2 = AUX, system = SET (the app's names). up (u0), down (d0), set_temp (u1) and set_time (d1) are in the app's code table but never sent by it.",
       "fields": {
         "config_entry_id": {
           "name": "Spa",

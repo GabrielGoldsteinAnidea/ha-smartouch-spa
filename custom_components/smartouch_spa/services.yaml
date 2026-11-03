@@ -24,4 +24,4 @@ press_button:
       required: true
       selector:
         select:
-          options: [light, jets, aux, aux2, system]
+          options: [light, jets, aux, aux2, system, up, down, set_temp, set_time]

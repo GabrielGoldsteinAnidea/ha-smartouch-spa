@@ -18,6 +18,10 @@ def test_key_codes_match_app_buttons_codes():
         "aux": b"a0",
         "aux2": b"x0",
         "system": b"s0",
+        "up": b"u0",
+        "down": b"d0",
+        "set_temp": b"u1",
+        "set_time": b"d1",
     }
 
 

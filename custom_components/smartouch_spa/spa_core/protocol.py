@@ -55,10 +55,11 @@ class Key(StrEnum):
 
     docs/PROTOCOL.md has the positions. Only a press test settles aux/aux2.
 
-    The app also defines u0/d0/u1/d1 (up, down, set-temp, set-time), but only
-    a layout it never loads draws them, so they are deliberately not exposed:
-    we only send what the shipping app sends. There is no filter key, and
-    there are no codes for key combinations (programming menus).
+    The app's buttons_codes table also has u0/d0/u1/d1 (up, down, set-temp,
+    set-time), drawn only by the unused ``spa_bluetooth`` layout, so the
+    shipping app never sends them. They are exposed as plain presses for the
+    owner to test by hand (the panel itself limits the set point). There is no
+    filter key, and there are no codes for key combinations (programming menus).
     """
 
     LIGHT = "light"
@@ -66,6 +67,10 @@ class Key(StrEnum):
     AUX = "aux"
     AUX2 = "aux2"
     SYSTEM = "system"
+    UP = "up"
+    DOWN = "down"
+    SET_TEMP = "set_temp"
+    SET_TIME = "set_time"
 
 
 KEY_CODES: dict[Key, str] = {
@@ -74,6 +79,10 @@ KEY_CODES: dict[Key, str] = {
     Key.AUX: "a0",
     Key.AUX2: "x0",
     Key.SYSTEM: "s0",
+    Key.UP: "u0",
+    Key.DOWN: "d0",
+    Key.SET_TEMP: "u1",
+    Key.SET_TIME: "d1",
 }
 
 
@@ -86,8 +95,8 @@ def encode_key(key: Key) -> bytes:
 # layout, so they have not been seen in use. The integration sends them only
 # to step through a menu someone has already opened at the panel, checking
 # the display after every press.
-MENU_UP = b"u0"
-MENU_DOWN = b"d0"
+MENU_UP = encode_key(Key.UP)
+MENU_DOWN = encode_key(Key.DOWN)
 
 
 # Indicator lights that show each device key's state: (Lo light, Hi light).
