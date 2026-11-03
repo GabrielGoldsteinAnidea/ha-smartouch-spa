@@ -78,15 +78,15 @@ _U_NAMES = {
     4: "User timer restarts on every key",
     5: "Hide time of day",
     6: "Unit opposite to line frequency",
-    7: "Reserved U7",
-    8: "Reserved U8",
+    7: "Reserved",
+    8: "Reserved",
 }
 _P_NAMES = {
     1: "Circulation pump fitted",
     2: "Primary pump single speed",
     3: "Low power mode",
     4: "Light key 3-function",
-    5: "Reserved P5",
+    5: "Reserved",
     6: "Air blower disabled",
     7: "Secondary pump dual speed",
     8: "Two secondary pumps",
