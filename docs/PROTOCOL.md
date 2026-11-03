@@ -116,11 +116,20 @@ real GATT property flags are not yet observed.
 |---|---|---|
 | The parameter menu, on this firmware, is the circular list FP1 FP2 FP3 FP4 FP1d FP2d FP3d FP4d CLdn ECL CHCL Uto PUF SEnd CAnC. The manuals' SIL, SILd and CALb are absent. | Confirmed | The owner scrolled it at the panel on 2026-11-02; Display sensor history. |
 | The options menu is the circular list U1-U8, P1-P8, d1-d8, CAnC, SEnd. U and P labels carry their value (`P8 1`); d labels do not. It first showed CAnC when opened. | Confirmed | Same session. |
+| An untouched menu closed by itself after about 30 s (the manuals say 60 s). | Observed once | 2026-11-02 19:57:55 to 19:58:24: the options menu opened on CAnC and closed with no key pressed. This is why the takeover can be armed ahead and starts the moment a menu opens. |
 | The Edit light (byte 4 bit 5) blinks while a menu is open. | Confirmed | Same session: frames ending `21 00` and `01 00` alternate. |
 | The owner's options: U1-U8 all 0; P1 1, P2 1, P3 0, P4 0, P5 0, P6 0, P7 0, P8 1. | Confirmed | Same session. |
 | A parameter's value shows after SET on it; times show `h:mm` with the AM light. | Reported | Manuals pages 13-14. Not yet seen on this spa. |
 | The same panel key moved backwards through the parameter menu and forwards through the options menu in the owner's session. | Observed | Same session. The takeover therefore learns UP's direction for each menu from its first press. |
 | `u0` and `d0` act as UP and DOWN inside a menu. | Unknown | They are in the app's `buttons_codes`, but the shipping app never sends them. The menu takeover is their first use and checks every press. |
+
+## Flashing lights
+
+The Filtering light flashed at about 1 Hz (on ~0.3 s, off ~0.7 s, with pauses of up
+to 7 s) from 19:21 on 2026-11-02, and the Edit light flashes while a menu is
+open. What a flashing Filtering light means is not documented in the manuals.
+The integration reports a light that changed 3 or more times within 10 s as on,
+with a `flashing` attribute.
 
 ## Water temperature
 

@@ -9,6 +9,8 @@ it acknowledges a high-limit (HLoH) error once the cause is fixed.
 
 from __future__ import annotations
 
+import time
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
@@ -94,8 +96,10 @@ class ApplySettingsButton(SpaEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         try:
-            await self.client.apply_settings(dict(self.client.pending_settings))
+            done = await self.client.apply_settings(dict(self.client.pending_settings))
+            self.client.last_takeover = {"at": time.time(), "ok": True, "result": f"wrote {', '.join(done)}"}
         except MenuError as err:
+            self.client.last_takeover = {"at": time.time(), "ok": False, "result": str(err)}
             raise HomeAssistantError(f"Takeover stopped: {err}") from err
         except Exception as err:
             raise HomeAssistantError(f"Takeover failed: {err}") from err

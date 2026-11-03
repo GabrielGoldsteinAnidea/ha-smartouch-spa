@@ -44,6 +44,9 @@ MAX_CYCLE_PRESSES = 4
 MENU_RESPONSE_TIMEOUT = 3.0
 # How long to wait for the panel to close a menu after SET on SEnd.
 MENU_CLOSE_TIMEOUT = 6.0
+# The panel closed an untouched menu after about 30 s on the owner's spa, so
+# a takeover has to start as soon as the menu opens: it can be armed ahead.
+AUTO_TAKEOVER_ARM_TIME = 600.0
 
 
 class KeyCycleError(Exception):
@@ -102,6 +105,10 @@ class SpaClient:
         # menu -> True if UP moves to the next item, learnt from the first press
         self._up_forward: dict[menus.Menu, bool] = {}
         self.menu_log: deque[str] = deque(maxlen=60)
+        # time.monotonic() until which a menu opened at the panel is taken over at once
+        self.auto_takeover_until: float | None = None
+        self.last_takeover: dict | None = None  # {"at", "ok", "result"}
+        self._takeover_task: asyncio.Task | None = None
         self.mmode: str | None = None
         self.version: dict | None = None
         # (value, unit, time.monotonic()) of the last set point this integration sent.
@@ -252,8 +259,37 @@ class SpaClient:
             if frame.indicators != self.tracker.state.indicators:
                 self._leds_changed.set()
             self.tracker.update(frame.text, frame.indicators)
+            was_open = self.menu.open
             self.menu.update(frame.text, frame.indicators, time.monotonic())
             self._display_event.set()
+            if self.menu.open and not was_open:
+                self._maybe_auto_takeover()
+
+    # ---------------------------------------------------------- auto takeover
+    @property
+    def auto_takeover_armed(self) -> bool:
+        return self.auto_takeover_until is not None and time.monotonic() < self.auto_takeover_until
+
+    def arm_auto_takeover(self, armed: bool) -> None:
+        self.auto_takeover_until = time.monotonic() + AUTO_TAKEOVER_ARM_TIME if armed else None
+        self._notify_listeners()
+
+    def _maybe_auto_takeover(self) -> None:
+        if not self.auto_takeover_armed or not self.pending_settings:
+            return
+        if self._takeover_task is not None and not self._takeover_task.done():
+            return
+        self.auto_takeover_until = None  # one attempt per arming
+        self._takeover_task = asyncio.get_running_loop().create_task(self._auto_takeover())
+
+    async def _auto_takeover(self) -> None:
+        try:
+            done = await self.apply_settings(dict(self.pending_settings))
+            self.last_takeover = {"at": time.time(), "ok": True, "result": f"wrote {', '.join(done)}"}
+        except Exception as err:  # reported through the entities, never raised
+            _LOGGER.warning("Menu takeover stopped: %s (presses: %s)", err, list(self.menu_log))
+            self.last_takeover = {"at": time.time(), "ok": False, "result": str(err)}
+        self._notify_listeners()
 
     # ------------------------------------------------------------- settings
     def load_settings(self, stored: dict[str, dict]) -> None:
@@ -327,14 +363,15 @@ class SpaClient:
             for _ in range(MAX_CYCLE_PRESSES):
                 if current == target:
                     return
-                self._leds_changed.clear()
+                before = current
                 await self.press(key)
-                try:
-                    await asyncio.wait_for(self._leds_changed.wait(), KEY_RESPONSE_TIMEOUT)
-                except TimeoutError:
+                # Wait for this key's own lights: other lights (Filtering) may be flashing.
+                if not await self._wait_until(
+                    lambda before=before: self.key_state(key) != before, KEY_RESPONSE_TIMEOUT
+                ):
                     raise KeyCycleError(
-                        f"{key.value}: the lights did not change within {KEY_RESPONSE_TIMEOUT} s of a press"
-                    ) from None
+                        f"{key.value}: the {key.value} lights did not change within {KEY_RESPONSE_TIMEOUT} s of a press"
+                    )
                 await asyncio.sleep(KEY_SETTLE)
                 new = self.key_state(key)
                 self.observed_transitions.setdefault(key.value, []).append((current, new))
@@ -353,20 +390,25 @@ class SpaClient:
                 raise KeyCycleError(f"{key.value}: did not reach {target} in {MAX_CYCLE_PRESSES} presses")
 
     # ----------------------------------------------------------- menu takeover
-    async def _wait_display(self, predicate, timeout: float, what: str) -> None:
+    async def _wait_until(self, predicate, timeout: float) -> bool:
+        """Wait for display frames until ``predicate()`` holds. False on timeout."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while not predicate():
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise MenuError(f"timed out waiting for {what}")
+                return False
             self._display_event.clear()
             try:
                 await asyncio.wait_for(self._display_event.wait(), remaining)
             except TimeoutError:
                 self.menu.check_timeout(time.monotonic())
-                if not predicate():
-                    raise MenuError(f"timed out waiting for {what}") from None
+                return predicate()
+        return True
+
+    async def _wait_display(self, predicate, timeout: float, what: str) -> None:
+        if not await self._wait_until(predicate, timeout):
+            raise MenuError(f"timed out waiting for {what}")
 
     def _label_code(self) -> str | None:
         return None if self.menu.label is None else self.menu.label.code

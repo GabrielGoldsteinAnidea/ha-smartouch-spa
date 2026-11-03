@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -34,6 +35,13 @@ _CLOCK_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
 
 # Seconds a status message stays "current" after it was last shown.
 STATUS_WINDOW = 90.0
+
+# A light that changed this many times within BLINK_WINDOW seconds is
+# flashing. On the owner's spa the Filtering light flashed at about 1 Hz
+# (on ~0.3 s, off ~0.7 s) with pauses of up to 7 s; the Edit light flashes
+# while a menu is open.
+BLINK_WINDOW = 10.0
+BLINK_CHANGES = 3
 
 # The app's spa limits are 40-104 F / 4.8-40 C (js/panel.js device_limits);
 # allow a little margin so a reading slightly outside is still shown.
@@ -109,6 +117,7 @@ class DisplayTracker:
         self.setpoint_window = setpoint_window
         self._clock = clock
         self._last_set_point_change: float | None = None
+        self._led_changes: dict[str, deque[float]] = {}
         self.state = SpaState()
 
     def note_set_point_change(self) -> None:
@@ -125,6 +134,9 @@ class DisplayTracker:
         st.display_text = text
         st.last_frame_at = now
         if indicators is not None:
+            for name, on in indicators.items():
+                if st.indicators.get(name, on) != on:
+                    self._led_changes.setdefault(name, deque(maxlen=BLINK_CHANGES * 4)).append(now)
             st.indicators = dict(indicators)
         reading = parse_temperature(text)
         if reading is None:
@@ -145,6 +157,19 @@ class DisplayTracker:
             st.water_temp = reading
             st.last_water_temp_at = now
         return st
+
+    # ----------------------------------------------------------------- lights
+    def led_flashing(self, name: str) -> bool:
+        now = self._clock()
+        changes = self._led_changes.get(name, ())
+        return sum(1 for t in changes if now - t <= BLINK_WINDOW) >= BLINK_CHANGES
+
+    def led(self, name: str) -> bool | None:
+        """A light's state with flashing smoothed out: a flashing light counts as on."""
+        raw = self.state.indicators.get(name)
+        if raw is None:
+            return None
+        return True if self.led_flashing(name) else raw
 
     # ------------------------------------------------------------- messages
     def current_messages(self, window: float = STATUS_WINDOW) -> list[status_mod.Message]:

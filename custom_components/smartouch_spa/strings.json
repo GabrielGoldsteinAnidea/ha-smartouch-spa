@@ -199,6 +199,9 @@
       },
       "air": {
         "name": "Air"
+      },
+      "auto_takeover": {
+        "name": "Take over next panel menu"
       }
     }
   },

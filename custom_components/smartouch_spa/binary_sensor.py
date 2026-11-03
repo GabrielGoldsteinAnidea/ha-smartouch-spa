@@ -59,7 +59,12 @@ class IndicatorSensor(SpaEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        return self.client.state.indicators.get(self._led)
+        # Flashing lights (Filtering, Edit) would otherwise flip every second.
+        return self.client.tracker.led(self._led)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"flashing": self.client.tracker.led_flashing(self._led)}
 
 
 class EconomySensor(SpaEntity, BinarySensorEntity):
@@ -81,7 +86,7 @@ class ProblemSensor(SpaEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        return bool(self.client.tracker.current_errors()) or bool(self.client.state.indicators.get("overheat"))
+        return bool(self.client.tracker.current_errors()) or bool(self.client.tracker.led("overheat"))
 
     @property
     def extra_state_attributes(self) -> dict:

@@ -11,10 +11,11 @@ the value last read from the panel unless you changed it here.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import CONF_ADDRESS
+from homeassistant.const import CONF_ADDRESS, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -45,6 +46,7 @@ async def async_setup_entry(
     client = entry.runtime_data
     address = entry.data[CONF_ADDRESS]
     entities: list[SwitchEntity] = [KeySwitch(client, address, k, t) for k, t in switch_keys(client.equipment).items()]
+    entities.append(AutoTakeoverSwitch(client, address, "auto_takeover"))
     entities += [
         OptionSwitch(client, address, s)
         for s in menus.OPTIONS
@@ -81,6 +83,48 @@ class KeySwitch(SpaEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._go("off")
+
+
+class AutoTakeoverSwitch(SpaEntity, SwitchEntity):
+    """Arm a takeover of the next panel menu that opens.
+
+    The panel closes an untouched menu after about 30 s, so the takeover has
+    to start the moment the menu opens. Turn this on, then open the menu at
+    the panel: Home Assistant writes the pending settings for that menu at
+    once. It turns itself off after one attempt, or after 10 minutes.
+    """
+
+    _attr_translation_key = "auto_takeover"
+    _attr_icon = "mdi:robot-outline"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return self.client.auto_takeover_armed
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        last = self.client.last_takeover
+        if last is None:
+            return {}
+        return {
+            "last_result": last["result"],
+            "last_ok": last["ok"],
+            "last_at": datetime.fromtimestamp(last["at"], UTC).isoformat(),
+            "last_presses": list(self.client.menu_log),
+        }
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if not self.client.pending_settings:
+            raise HomeAssistantError("Nothing to write: change a setting first")
+        self.client.arm_auto_takeover(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self.client.arm_auto_takeover(False)
 
 
 class OptionSwitch(SpaSettingEntity, SwitchEntity):
