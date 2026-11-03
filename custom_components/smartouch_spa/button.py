@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import SpaConfigEntry
+from .client import MenuError
 from .entity import SpaEntity
 from .spa_core.protocol import Key
 
@@ -33,7 +34,14 @@ async def async_setup_entry(
 ) -> None:
     client = entry.runtime_data
     address = entry.data[CONF_ADDRESS]
-    async_add_entities([*(SpaButton(client, address, k) for k in ICONS), SyncClockButton(client, address)])
+    async_add_entities(
+        [
+            *(SpaButton(client, address, k) for k in ICONS),
+            SyncClockButton(client, address),
+            ApplySettingsButton(client, address),
+            DiscardSettingsButton(client, address),
+        ]
+    )
 
 
 class SpaButton(SpaEntity, ButtonEntity):
@@ -65,3 +73,47 @@ class SyncClockButton(SpaEntity, ButtonEntity):
             await self.client.set_clock(now.hour, now.minute)
         except Exception as err:
             raise HomeAssistantError(f"Could not set the spa clock: {err}") from err
+
+
+class ApplySettingsButton(SpaEntity, ButtonEntity):
+    """Write pending settings through the menu someone has opened at the panel.
+
+    The panel opens its menus only with two keys pressed together (SET+DOWN
+    for parameters, UP+DOWN for options), which Bluetooth cannot send. Open
+    the menu at the panel, then press this: Home Assistant steps to each
+    pending item with UP/DOWN, sets it, and saves with SEnd. Every press is
+    checked against the display; on any surprise it stops, and the panel
+    discards unsaved changes after 60 s.
+    """
+
+    _attr_translation_key = "apply_settings"
+    _attr_icon = "mdi:content-save-cog"
+
+    def __init__(self, client, address) -> None:
+        super().__init__(client, address, "button_apply_settings")
+
+    async def async_press(self) -> None:
+        try:
+            await self.client.apply_settings(dict(self.client.pending_settings))
+        except MenuError as err:
+            raise HomeAssistantError(f"Takeover stopped: {err}") from err
+        except Exception as err:
+            raise HomeAssistantError(f"Takeover failed: {err}") from err
+
+
+class DiscardSettingsButton(SpaEntity, ButtonEntity):
+    """Forget settings changed in Home Assistant that were not written yet."""
+
+    _attr_translation_key = "discard_settings"
+    _attr_icon = "mdi:playlist-remove"
+
+    def __init__(self, client, address) -> None:
+        super().__init__(client, address, "button_discard_settings")
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_press(self) -> None:
+        for code in list(self.client.pending_settings):
+            self.client.set_pending(code, None)

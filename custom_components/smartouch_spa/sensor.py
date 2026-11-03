@@ -9,7 +9,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import SpaConfigEntry
 from .const import CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT
-from .entity import SpaEntity
+from .entity import SpaEntity, SpaSettingEntity
+from .spa_core import menus
 from .spa_core.display import Unit
 from .spa_core.status import ERROR_CODES
 
@@ -34,6 +35,8 @@ async def async_setup_entry(
             WaterTempSensor(client, address, "water_temperature", unit),
             LastFrameSensor(client, address, "last_frame"),
             AuthStateSensor(client, address, "auth_state"),
+            PendingSettingsSensor(client, address, "pending_settings"),
+            *(ReadingSensor(client, address, s) for s in menus.OPTIONS if s.kind is menus.Kind.READING),
         ]
     )
 
@@ -131,3 +134,36 @@ class AuthStateSensor(SpaEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return self.client.mmode
+
+
+class PendingSettingsSensor(SpaEntity, SensorEntity):
+    """How many settings are waiting to be written at the next menu takeover."""
+
+    _attr_translation_key = "pending_settings"
+    _attr_icon = "mdi:playlist-edit"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> int:
+        return len(self.client.pending_settings)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        pending = self.client.pending_settings
+        by_menu: dict[str, dict] = {}
+        for code, value in pending.items():
+            by_menu.setdefault(menus.SETTINGS[code].menu.value, {})[code] = value
+        return {"pending": by_menu, "last_takeover": list(self.client.menu_log)}
+
+
+class ReadingSensor(SpaSettingEntity, SensorEntity):
+    """Diagnostic values d1-d8, as last read from the options menu."""
+
+    _attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self):
+        return self.client.setting_value(self.setting.code)

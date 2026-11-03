@@ -81,6 +81,15 @@ def encode_key(key: Key) -> bytes:
     return KEY_CODES[key].encode("ascii")
 
 
+# UP and DOWN (TEMP and TIME keys). They are in the app's buttons_codes table
+# and drawn by its spa_bluetooth layout, but the shipping app never loads that
+# layout, so they have not been seen in use. The integration sends them only
+# to step through a menu someone has already opened at the panel, checking
+# the display after every press.
+MENU_UP = b"u0"
+MENU_DOWN = b"d0"
+
+
 # Indicator lights that show each device key's state: (Lo light, Hi light).
 # Pairing from the positions of the keys and lights in window.frames.spa.
 # window.frames.spa_bluetooth swaps aux and aux2; unconfirmed until tested.

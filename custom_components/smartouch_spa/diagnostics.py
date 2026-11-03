@@ -40,6 +40,16 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: SpaConf
             "key_states": {k.value: client.key_state(k) for k in KEY_LEDS},
         },
         "observed_transitions": client.observed_transitions,
+        "equipment": None if client.equipment is None else {k: str(v) for k, v in vars(client.equipment).items()},
+        "menu": {
+            "open": client.menu.open,
+            "menu": None if client.menu.menu is None else client.menu.menu.value,
+            "item": None if client.menu.label is None else client.menu.label.code,
+            "value": client.menu.value,
+        },
+        "settings": client.settings,
+        "pending_settings": client.pending_settings,
+        "last_takeover": list(client.menu_log),
         # The client never records MCODE contents, so these hold no PIN.
         "unique_payloads": {k: sorted(v) for k, v in client.unique_payloads.items()},
         "raw_frames": [f.as_dict() for f in client.raw_frames],

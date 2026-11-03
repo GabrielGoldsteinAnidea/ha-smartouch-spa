@@ -22,13 +22,21 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import SpaConfigEntry
-from .entity import SpaEntity
+from .entity import SpaEntity, SpaSettingEntity
+from .spa_core import menus
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: SpaConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities([SpaClock(entry.runtime_data, entry.data[CONF_ADDRESS], "clock")])
+    client = entry.runtime_data
+    address = entry.data[CONF_ADDRESS]
+    async_add_entities(
+        [
+            SpaClock(client, address, "clock"),
+            *(SettingTime(client, address, s) for s in menus.PARAMETERS if s.kind is menus.Kind.TIME),
+        ]
+    )
 
 
 class SpaClock(SpaEntity, TimeEntity):
@@ -60,3 +68,20 @@ class SpaClock(SpaEntity, TimeEntity):
         except Exception as err:
             raise HomeAssistantError(f"Could not set the spa clock: {err}") from err
         self.async_write_ha_state()
+
+
+class SettingTime(SpaSettingEntity, TimeEntity):
+    """Filtration period start times FP1-FP4 (parameter menu)."""
+
+    _attr_icon = "mdi:clock-start"
+
+    @property
+    def native_value(self) -> time | None:
+        value = self.desired_value
+        if value is None:
+            return None
+        hour, minute = (int(x) for x in str(value).split(":"))
+        return time(hour, minute)
+
+    async def async_set_value(self, value: time) -> None:
+        self.set_desired(f"{value.hour:02d}:{value.minute:02d}")

@@ -9,6 +9,7 @@ source of each step and for what is still unconfirmed on a real spa.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import time
@@ -21,6 +22,7 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
+from .spa_core import menus
 from .spa_core import protocol as p
 from .spa_core.display import DisplayTracker, SpaState
 
@@ -38,10 +40,18 @@ KEY_RESPONSE_TIMEOUT = 3.0
 KEY_SETTLE = 0.4
 # A device key cycles through at most 4 states (manual, table 1).
 MAX_CYCLE_PRESSES = 4
+# How long to wait for the display to react to a key press inside a menu.
+MENU_RESPONSE_TIMEOUT = 3.0
+# How long to wait for the panel to close a menu after SET on SEnd.
+MENU_CLOSE_TIMEOUT = 6.0
 
 
 class KeyCycleError(Exception):
     """A device key did not reach the requested state."""
+
+
+class MenuError(Exception):
+    """A menu takeover stopped: the display did not show what was expected."""
 
 
 class SpaAuthError(Exception):
@@ -80,6 +90,18 @@ class SpaClient:
         self.observed_transitions: dict[str, list[tuple[str, str]]] = {}
         # (hour, minute, time.monotonic()) of the last clock this integration sent.
         self.commanded_clock: tuple[int, int, float] | None = None
+        # Programming menus: passive capture of what the panel shows.
+        self.menu = menus.MenuTracker(on_commit=self._on_menu_commit)
+        # code -> {"value": ..., "at": time.time()} for every setting seen in a menu
+        self.settings: dict[str, dict] = {}
+        # code -> value the user wants written at the next menu takeover
+        self.pending_settings: dict[str, int | str] = {}
+        self.on_settings_changed: Callable[[], None] | None = None
+        self.equipment = None  # spa_core.equipment.Equipment, set by the integration
+        self._display_event = asyncio.Event()
+        # menu -> True if UP moves to the next item, learnt from the first press
+        self._up_forward: dict[menus.Menu, bool] = {}
+        self.menu_log: deque[str] = deque(maxlen=60)
         self.mmode: str | None = None
         self.version: dict | None = None
         # (value, unit, time.monotonic()) of the last set point this integration sent.
@@ -230,6 +252,36 @@ class SpaClient:
             if frame.indicators != self.tracker.state.indicators:
                 self._leds_changed.set()
             self.tracker.update(frame.text, frame.indicators)
+            self.menu.update(frame.text, frame.indicators, time.monotonic())
+            self._display_event.set()
+
+    # ------------------------------------------------------------- settings
+    def load_settings(self, stored: dict[str, dict]) -> None:
+        self.settings = {k: v for k, v in stored.items() if k in menus.SETTINGS}
+
+    def _on_menu_commit(self, values: dict) -> None:
+        now = time.time()
+        for code, value in values.items():
+            self.settings[code] = {"value": value, "at": now}
+            if self.pending_settings.get(code) == value:
+                self.pending_settings.pop(code)  # the panel now has it
+        self._settings_changed()
+
+    def set_pending(self, code: str, value) -> None:
+        if value is None or value == self.setting_value(code):
+            self.pending_settings.pop(code, None)
+        else:
+            self.pending_settings[code] = value
+        self._settings_changed()
+
+    def _settings_changed(self) -> None:
+        if self.on_settings_changed is not None:
+            self.on_settings_changed()
+        self._notify_listeners()
+
+    def setting_value(self, code: str):
+        entry = self.settings.get(code)
+        return None if entry is None else entry["value"]
 
     # ------------------------------------------------------------ key state
     def key_state(self, key: p.Key) -> str | None:
@@ -299,6 +351,197 @@ class SpaClient:
                 seen.append(current)
             if current != target:
                 raise KeyCycleError(f"{key.value}: did not reach {target} in {MAX_CYCLE_PRESSES} presses")
+
+    # ----------------------------------------------------------- menu takeover
+    async def _wait_display(self, predicate, timeout: float, what: str) -> None:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while not predicate():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise MenuError(f"timed out waiting for {what}")
+            self._display_event.clear()
+            try:
+                await asyncio.wait_for(self._display_event.wait(), remaining)
+            except TimeoutError:
+                self.menu.check_timeout(time.monotonic())
+                if not predicate():
+                    raise MenuError(f"timed out waiting for {what}") from None
+
+    def _label_code(self) -> str | None:
+        return None if self.menu.label is None else self.menu.label.code
+
+    async def _menu_press(self, code: bytes) -> None:
+        self.menu_log.append(f"press {code.decode()} at {self._label_code() or self.menu.value}")
+        await self._write(p.CHAR_KEYBOARD, code)
+
+    async def apply_settings(self, targets: dict[str, int | str]) -> list[str]:
+        """Write ``targets`` through the menu someone has opened at the panel.
+
+        Only writable settings of the open menu are applied. Each press must
+        move the display exactly as expected, otherwise MenuError stops the
+        takeover and no further key is pressed; the panel then discards the
+        unsaved changes after 60 s without a key press (manuals). It ends with
+        SET on SEnd. Returns the codes it wrote.
+        """
+        async with self._cycle_lock:
+            if not self.menu.open or self.menu.label is None:
+                raise MenuError("open the parameter or options menu at the spa panel first")
+            if self.menu.on_value_screen:
+                raise MenuError("press SET at the panel to return to the menu list first")
+            self.menu_log.clear()
+            menu = self.menu.menu or await self._identify_menu()
+            order = menus.ORDER[menu]
+            todo = {
+                c: v
+                for c, v in targets.items()
+                if c in menus.SETTINGS and menus.SETTINGS[c].menu is menu and menus.SETTINGS[c].writable
+            }
+            for c, v in todo.items():
+                st = menus.SETTINGS[c]
+                if st.kind is menus.Kind.NUMBER and not (st.min <= int(v) <= st.max):
+                    raise MenuError(f"{c} must be {st.min}-{st.max}")
+            if not todo:
+                raise MenuError(f"nothing to change in the {menu.value} menu")
+            done = []
+            for code in sorted(todo, key=order.index):
+                await self._menu_goto(menu, code)
+                await self._menu_set(code, todo[code])
+                done.append(code)
+            await self._menu_goto(menu, "SEnd")
+            await self._menu_press(p.encode_key(p.Key.SYSTEM))
+            await self._wait_display(lambda: not self.menu.open, MENU_CLOSE_TIMEOUT, "the menu to close after SEnd")
+            return done
+
+    async def _identify_menu(self) -> menus.Menu:
+        """The menu opened on SEnd or CAnC, which both menus have: press UP until it shows."""
+        trail = [self._label_code()]
+        for _ in range(3):
+            cur = trail[-1]
+            await self._menu_press(p.MENU_UP)
+            await self._wait_display(
+                lambda cur=cur: self.menu.label is not None and self.menu.label.code != cur,
+                MENU_RESPONSE_TIMEOUT,
+                f"the menu to move off {cur}",
+            )
+            trail.append(self._label_code())
+            menu = self.menu.label.menu
+            if menu is None:
+                continue
+            # Which way did UP go? Check the trail against the menu's order.
+            order = menus.ORDER[menu]
+            idx = [order.index(c) for c in trail]
+            steps = {(b - a) % len(order) for a, b in itertools.pairwise(idx)}
+            if steps == {1}:
+                self._up_forward[menu] = True
+            elif steps == {len(order) - 1}:
+                self._up_forward[menu] = False
+            else:
+                raise MenuError(f"UP moved {' -> '.join(trail)}, which fits neither menu")
+            return menu
+        raise MenuError(f"could not tell which menu is open ({' -> '.join(trail)})")
+
+    async def _menu_goto(self, menu: menus.Menu, target: str) -> None:
+        order = menus.ORDER[menu]
+        for _ in range(len(order) + 2):
+            cur = self._label_code()
+            if cur is None:
+                raise MenuError("lost track of the menu")
+            if cur == target:
+                return
+            nxt, prv = menus.neighbours(menu, cur)
+            forward = (order.index(target) - order.index(cur)) % len(order) <= len(order) // 2
+            up_fwd = self._up_forward.get(menu)
+            use_up = True if up_fwd is None else (forward == up_fwd)
+            await self._menu_press(p.MENU_UP if use_up else p.MENU_DOWN)
+            await self._wait_display(
+                lambda cur=cur: self.menu.label is not None and self.menu.label.code != cur,
+                MENU_RESPONSE_TIMEOUT,
+                f"the menu to move off {cur}",
+            )
+            new = self._label_code()
+            if up_fwd is None:
+                if new == nxt:
+                    self._up_forward[menu] = True
+                elif new == prv:
+                    self._up_forward[menu] = False
+                else:
+                    raise MenuError(f"UP moved from {cur} to {new}, expected {nxt} or {prv}")
+                continue
+            expected = nxt if use_up == up_fwd else prv
+            if new != expected:
+                raise MenuError(f"moved from {cur} to {new}, expected {expected}")
+        raise MenuError(f"could not reach {target}")
+
+    async def _menu_set(self, code: str, target) -> None:
+        st = menus.SETTINGS[code]
+        set_key = p.encode_key(p.Key.SYSTEM)
+        if st.kind is menus.Kind.FLAG:
+            if self.menu.label.value == int(target):
+                return
+            await self._menu_press(set_key)
+            await self._wait_display(
+                lambda: (
+                    self.menu.label is not None
+                    and self.menu.label.code == code
+                    and self.menu.label.value == int(target)
+                ),
+                MENU_RESPONSE_TIMEOUT,
+                f"{code} to show {target}",
+            )
+            return
+        await self._menu_press(set_key)
+        await self._wait_display(lambda: self.menu.on_value_screen, MENU_RESPONSE_TIMEOUT, f"the {code} value")
+        if st.kind is menus.Kind.NUMBER:
+            await self._menu_adjust(code, lambda v: v, int(target), None)
+        else:
+            hour, minute = (int(x) for x in str(target).split(":"))
+            await self._menu_adjust(code, lambda v: int(v[:2]), hour, 24)
+            await self._menu_press(set_key)  # hours locked in, minutes next
+            await asyncio.sleep(0.3)
+            await self._menu_adjust(code, lambda v: int(v[3:]), minute, 60)
+        await self._menu_press(set_key)
+        await self._wait_display(
+            lambda: self.menu.label is not None and self.menu.label.code == code and not self.menu.on_value_screen,
+            MENU_RESPONSE_TIMEOUT,
+            f"the menu to return to {code}",
+        )
+        seen = self.menu.session.last.get(code) if self.menu.session else None
+        want = str(target) if st.kind is menus.Kind.TIME else int(target)
+        if seen is not None and seen != want:
+            raise MenuError(f"{code} shows {seen} after setting, expected {want}")
+
+    async def _menu_adjust(self, code: str, part, target: int, modulo: int | None) -> None:
+        """Press UP/DOWN until ``part(value) == target``.
+
+        Assumes UP increases; if the first press goes the other way it swaps
+        once. Stops if a press skips over the target (the step does not fit).
+        """
+        up_increases = True
+        swapped = False
+        for _ in range(260):
+            value = part(self.menu.value)
+            if value == target:
+                return
+            want_up = target > value if modulo is None else (target - value) % modulo <= modulo // 2
+            await self._menu_press(p.MENU_UP if want_up == up_increases else p.MENU_DOWN)
+            old = value
+            await self._wait_display(
+                lambda old=old: self.menu.value is not None and part(self.menu.value) != old,
+                MENU_RESPONSE_TIMEOUT,
+                f"{code} to change from {old}",
+            )
+            new = part(self.menu.value)
+            moved_up = (new - old) % modulo <= modulo // 2 if modulo else new > old
+            if moved_up != want_up:
+                if swapped:
+                    raise MenuError(f"{code} moved the wrong way ({old} -> {new})")
+                up_increases, swapped = not up_increases, True
+                continue
+            swapped = True  # direction confirmed
+            if modulo is None and (new - target) * (old - target) < 0:
+                raise MenuError(f"{code} jumped past {target} ({old} -> {new}); its step does not fit")
+        raise MenuError(f"{code} did not reach {target}")
 
     async def set_clock(self, hour: int, minute: int) -> None:
         payload = p.encode_time(hour, minute)  # validates before anything is sent

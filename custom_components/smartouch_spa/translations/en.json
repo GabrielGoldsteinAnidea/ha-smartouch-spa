@@ -37,8 +37,12 @@
         "data": {
           "temp_unit": "Temperature unit to assume until the display shows one",
           "setpoint_window": "Seconds the set point stays shown after a change",
-          "sync_clock": "Keep the spa clock set to Home Assistant's time (on connect and daily)"
-        }
+          "sync_clock": "Keep the spa clock set to Home Assistant's time (on connect and daily)",
+          "jets1": "Jets 1 (JETS key)",
+          "jets2": "Jets 2 (AUX key)",
+          "air": "Air blower (AIR key)"
+        },
+        "description": "Auto reads the pump layout from the spa's P options, which Home Assistant records whenever someone scrolls the options menu at the panel."
       }
     }
   },
@@ -72,6 +76,9 @@
           "no_flow_high": "No flow, high jets (PSoH)",
           "timeout_error": "Time-out error (ToE)"
         }
+      },
+      "pending_settings": {
+        "name": "Pending settings"
       }
     },
     "button": {
@@ -89,6 +96,12 @@
       },
       "sync_clock": {
         "name": "Sync clock"
+      },
+      "apply_settings": {
+        "name": "Apply settings (open a panel menu first)"
+      },
+      "discard_settings": {
+        "name": "Discard pending settings"
       }
     },
     "light": {
@@ -135,6 +148,9 @@
       },
       "problem": {
         "name": "Problem"
+      },
+      "menu_open": {
+        "name": "Panel menu open"
       }
     },
     "climate": {
@@ -144,36 +160,45 @@
     },
     "select": {
       "jets": {
-        "name": "Jets",
+        "name": "Jets 1",
         "state": {
           "off": "Off",
-          "low": "Lo",
-          "high": "Hi",
-          "low_high": "Lo + Hi"
-        }
-      },
-      "air": {
-        "name": "Air",
-        "state": {
-          "off": "Off",
-          "low": "Lo",
-          "high": "Hi",
-          "low_high": "Lo + Hi"
+          "low": "Low",
+          "high": "High"
         }
       },
       "aux": {
         "name": "Jets 2",
         "state": {
           "off": "Off",
-          "low": "Lo",
-          "high": "Hi",
-          "low_high": "Lo + Hi"
+          "low": "Low",
+          "high": "High"
+        }
+      },
+      "jets2_pumps": {
+        "name": "Jets 2",
+        "state": {
+          "off": "Off",
+          "jets_a": "Jets A",
+          "jets_b": "Jets B",
+          "both": "Both"
         }
       }
     },
     "time": {
       "clock": {
         "name": "Clock"
+      }
+    },
+    "switch": {
+      "jets": {
+        "name": "Jets 1"
+      },
+      "aux": {
+        "name": "Jets 2"
+      },
+      "air": {
+        "name": "Air"
       }
     }
   },
@@ -208,6 +233,31 @@
           "name": "Button",
           "description": "Key to press."
         }
+      }
+    }
+  },
+  "selector": {
+    "jets1": {
+      "options": {
+        "auto": "Auto (from option P2)",
+        "single": "One speed: on / off",
+        "dual": "Two speeds: low / high / off"
+      }
+    },
+    "jets2": {
+      "options": {
+        "auto": "Auto (from options P7 and P8)",
+        "none": "Not fitted",
+        "single": "One speed: on / off",
+        "dual": "Two speeds: low / high / off",
+        "two": "Two pumps: Jets A / Jets B / both"
+      }
+    },
+    "air": {
+      "options": {
+        "auto": "Auto (from option P6)",
+        "yes": "Fitted",
+        "no": "Not fitted"
       }
     }
   }

@@ -29,9 +29,10 @@ but it has not yet been seen working on the owner's spa.
 | °F or °C display (option U6) | Prog 18 | Follows the unit the display shows | Unverified for °C |
 | Time of day: set it (hold TIME) | User 5; Prog 6 | **Clock** time entity (set), **Sync clock** button, optional daily sync in the integration's options | Unverified: written in the app's format, not yet seen applied |
 | Time of day shown each minute | Prog 6 | the **Clock** entity reads it from the display | Unverified: not seen yet, the clock may never have been set |
-| JETS key: low, high, off (dual speed) or on, off (single speed) | User 6-7; Prog 7-9 | **Jets** select (Off / Lo / Hi) from the Jets Lo/Hi lights, **Jets key** button | Unverified |
-| AUX key: second pump, or two pumps cycling P1, P1+2, P2, off | User 6; Prog 8-9 | **Jets 2** select (Off / Lo / Hi / Lo + Hi) from the Jets 2 lights, **Aux key** button | Unverified |
-| AIR key: air blower on/off (or a single-speed second pump) | User 6-7; Prog 8-9 | **Air** select from the Air Lo/Hi lights, **Air key** button | Unverified |
+| JETS key: low, high, off (dual speed) or on, off (single speed) | User 6-7; Prog 7-9 | **Jets 1**: a switch for one speed, a select (Off / Low / High) for two; **Jets key** button | Confirmed as on/off on the owner's spa |
+| AUX key: second pump, or two pumps cycling P1, P1+2, P2, off | User 6; Prog 8-9 | **Jets 2**: a switch, Off / Low / High, or Off / Jets A / Jets B / Both for two pumps; **Aux key** button | Confirmed with two pumps on the owner's spa |
+| AIR key: air blower on/off (or a single-speed second pump) | User 6-7; Prog 8-9 | **Air** switch when a blower is fitted; **Air key** button | Toggles the Air Hi light; no blower on the owner's spa |
+| Equipment (P1, P2, P6, P7, P8) | Prog 19-20 | Integration options **Jets 1**, **Jets 2**, **Air blower**; Auto reads them from the options menu | Confirmed: the owner's spa read P2 1, P8 1 |
 | LITE key: light on/off, or light, light + accessory, off (option P4) | Prog 8-9, 19 | `light.spa_light` | Confirmed for on/off; the 3-function mode would need the light key pressed twice, which the light entity does not do |
 | SET key: done using the spa (all off, post-use filtration) | User 4; Prog 5, 11 | **Set key (done using spa)** button | Unverified |
 | SET clears a high-limit (HLoH) error once fixed | Prog 11, 21 | Same button | Unverified |
@@ -69,23 +70,32 @@ None has been seen on the owner's spa, so all are Unverified.
 | PSoC, PSoL, PSoH | No water pressure with the circulation, low or high pump on | User 10, 25; Prog 22 |
 | ToE | Controller time-out; everything off | Prog 22 |
 
-## Not reachable from Home Assistant
+## Programming menus
 
-These need two keys pressed together: SET+DOWN opens the parameter menu,
-UP+DOWN opens the options menu, SET+UP inverts the display. The app's
-Bluetooth key codes are single taps only: LITE, JETS, AIR, AUX, SET, and in
-a layout the app never loads, UP, DOWN, hold TEMP and hold TIME. None of them
-is a combination, so the menus cannot be opened, read or changed from Home
-Assistant with known codes. Set these on the spa-side panel.
+The panel opens its menus only with two keys pressed together (SET+DOWN for
+parameters, UP+DOWN for options), and the app's Bluetooth codes are single
+taps. Home Assistant cannot open a menu, but it follows one you open and can
+take over once it is open:
 
-| Manual feature | Pages |
-|---|---|
-| Filtration periods FP1-FP4 (start times and durations FP1d-FP4d) | User 13-14; Prog 13-14 |
-| Silence period SIL / SILd | User 14; Prog 14 |
-| Cool-down length CLDN, economy cycle ECL, channel clear CHCL, user time-out UTO, post-use filtration PUF | User 15; Prog 15 |
-| Temperature calibration CALB | User 16; Prog 16 |
-| User options U1-U8 (economy vs. auto, low pump on demand, auto filtration, user timer, clock display, °F/°C) | Prog 17-18 |
-| Protected options P1-P8 (pump types, low power, light mode, blower) | User 19; Prog 19-20 |
-| Diagnostic values D1-D8 | Prog 20 |
-| Invert the display (SET+UP) | User 6-7; Prog 10 |
-| WiFi board setup | User 21. The app's WiFi mode is a cloud relay (docs/PROTOCOL.md), so no WiFi transport is built. |
+* **Capture.** While you scroll a menu at the panel, every value it shows is
+  recorded and kept across restarts. U and P values show in the list; a
+  parameter's value shows after SET on it. A session's edits count only if
+  it ends with SET on SEnd.
+* **Takeover.** Change the settings entities in Home Assistant (they show
+  the value that will be written), open the matching menu at the panel, and
+  press **Apply settings**. It steps with UP/DOWN to each changed item, sets
+  it, and saves with SEnd, checking the display after every press. It never
+  writes P options or the reserved U7/U8. The UP/DOWN codes have not been
+  seen in use before, so the first takeover is also their first test.
+
+| Manual feature | Pages | Home Assistant | Status |
+|---|---|---|---|
+| Filtration start times FP1-FP4 | User 13-14; Prog 13-14 | time entities, settable | Menu items confirmed; values not seen yet |
+| Filtration durations FP1d-FP4d | User 14; Prog 14 | number entities, 0-240 min | Same |
+| CLdn, ECL, CHCL, Uto, PUF | User 15; Prog 15 | number entities | Same |
+| U1-U6 user options | Prog 17-18 | switches, settable | Values confirmed (all 0) |
+| U7, U8 (reserved) | Prog 18 | read-only binary sensors | Values confirmed |
+| P1-P8 protected options | User 19; Prog 19-20 | read-only binary sensors; they also shape the jets entities | Values confirmed |
+| d1-d8 diagnostic values | Prog 20 | read-only sensors, disabled by default | Labels confirmed; values show after SET |
+| Silence period SIL/SILd, calibration CALb | User 14, 16; Prog 14, 16 | none | Not in this firmware's menu |
+| Invert the display (SET+UP) | User 6-7; Prog 10 | none | Needs two keys at once |

@@ -85,7 +85,9 @@ real GATT property flags are not yet observed.
 | `u1` and `d1` are "hold TEMP 2 s" and "hold TIME 2 s". | Inferred | `spa_bluetooth` draws them as separate Set-temp and Set-time keys beside Up (`u0`) and Down (`d0`); the manuals enter temperature and time setting by holding TEMP or TIME for 2 s. Never sent by the shipping app. |
 | There is no code for two keys pressed together (SET+DOWN, UP+DOWN, SET+UP), so the panel's programming and option menus cannot be opened over Bluetooth with known codes. | Static | `buttons_codes` (`js/panel.js:4-7`) is the complete list; the only sender is a single key tap (`js/panel.js:31-41`). |
 | `l0` toggles the spa light and the light LED (byte 5 bit 4) follows it. | Confirmed | 2026-11-02: Home Assistant sent `6c 30`; the next display frame, 48 ms later, set byte 5 bit 4 (`... 00 10`), and the owner saw the light change. |
-| What `j0`, `a0`, `x0` and `s0` do on this spa, and in what order each device key cycles. | Unknown | The manual lists the possible cycles (single speed on/off; dual speed low/high/off; two AUX pumps P1, P1+2, P2, off). The owner reports two jet keys: one on/off, one that cycles through two sets of jets, which fits JETS (single speed) and AUX (two pumps). The integration's selects record every transition they see (`observed_transitions`). |
+| On the owner's spa `j0` toggles the Jets Hi light only (off, high), `x0` steps the Jets 2 lights off, low, low+high, high, off, and `a0` toggles the Air Hi light. This fits the controller's options P2 = 1 (single-speed primary pump), P8 = 1 (two secondary pumps; the Lo light is pump A) and P6 = 0 (blower enabled). The owner reports Jets 2 runs jets A, B or both, and that `a0` does nothing visible (no blower fitted). | Confirmed | Integration diagnostics, 2026-11-02: `observed_transitions` per key, and the option values read off the panel (see "Menus"). |
+| While the Air Hi light is on after `a0`, the display shows a counter (`00:52` to `00:59`, colon blinking, one step per second). | Observed once | 2026-11-02 frames `5b ed bf 3f 03 00` to `6f 6d 3f 3f 03 00`. Possibly the user timer; not explained. |
+| Earlier open question: what each key does and its cycle. | Superseded | Answered above, except `s0` (SET), which is still untested outside a menu. Before this: The manual lists the possible cycles (single speed on/off; dual speed low/high/off; two AUX pumps P1, P1+2, P2, off). The owner reports two jet keys: one on/off, one that cycles through two sets of jets, which fits JETS (single speed) and AUX (two pumps). The integration's selects record every transition they see (`observed_transitions`). |
 
 ## Set temperature
 
@@ -107,6 +109,26 @@ real GATT property flags are not yet observed.
 | Byte 4 LEDs, bit0 upward: heating, air high, jets low, jets high, filtering, edit, overheat, AM. | Static | `js/panel.js:353-361` `segments[4]` |
 | Byte 5 LEDs: bits 0-3 unused; bit4 light, bit5 jets2 high, bit6 jets2 low, bit7 air low. | Static | `js/panel.js:363-367` and `:376` |
 | Which displayed temperature is the set point and which is the water temperature. The `edit` LED is a candidate for "showing the set point". | Unknown | Needs a live capture while changing the set point |
+
+## Menus
+
+| Fact | Status | Source |
+|---|---|---|
+| The parameter menu, on this firmware, is the circular list FP1 FP2 FP3 FP4 FP1d FP2d FP3d FP4d CLdn ECL CHCL Uto PUF SEnd CAnC. The manuals' SIL, SILd and CALb are absent. | Confirmed | The owner scrolled it at the panel on 2026-11-02; Display sensor history. |
+| The options menu is the circular list U1-U8, P1-P8, d1-d8, CAnC, SEnd. U and P labels carry their value (`P8 1`); d labels do not. It first showed CAnC when opened. | Confirmed | Same session. |
+| The Edit light (byte 4 bit 5) blinks while a menu is open. | Confirmed | Same session: frames ending `21 00` and `01 00` alternate. |
+| The owner's options: U1-U8 all 0; P1 1, P2 1, P3 0, P4 0, P5 0, P6 0, P7 0, P8 1. | Confirmed | Same session. |
+| A parameter's value shows after SET on it; times show `h:mm` with the AM light. | Reported | Manuals pages 13-14. Not yet seen on this spa. |
+| The same panel key moved backwards through the parameter menu and forwards through the options menu in the owner's session. | Observed | Same session. The takeover therefore learns UP's direction for each menu from its first press. |
+| `u0` and `d0` act as UP and DOWN inside a menu. | Unknown | They are in the app's `buttons_codes`, but the shipping app never sends them. The menu takeover is their first use and checks every press. |
+
+## Water temperature
+
+The temperature sensor sits in the heater manifold (User Manual page 3). On
+2026-11-02 the display read 98 °F with the pumps idle and climbed to 104 °F
+within five minutes once a pump ran, so readings taken while no pump runs
+can be well below the tub temperature. The 98/99 and 103/104 alternation is
+the reading sitting on a half-degree boundary.
 
 ## Clock
 
@@ -154,3 +176,5 @@ Reported only. `spa_core/status.py` holds the table, with page references.
 6. **Key states come from the Lo/Hi lights above each key** (see "Buttons"). The Jets, Air and Jets 2 selects press a key until its lights match, stop if a press changes nothing, and stop if the key returns to a state it already showed.
 7. **A message stays current for 90 s** after it was last shown, because `ECon` alternates with the temperature about once a minute.
 8. **"h:mm" with the colon lit is the time of day**, with the AM light for AM/PM.
+9. **Menu capture is passive** and keeps a session's first values unless the session ended with SET on SEnd (the menu closing within a few seconds of SEnd being shown).
+10. **Menu takeover** starts only on a menu someone opened at the panel, never writes P options or U7/U8, checks the display after every press, and stops on any mismatch, leaving the panel's 60 s time-out to discard unsaved changes.

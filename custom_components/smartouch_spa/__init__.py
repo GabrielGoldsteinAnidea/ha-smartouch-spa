@@ -17,22 +17,32 @@ from homeassistant.exceptions import (
     ServiceValidationError,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .client import SpaAuthError, SpaClient
 from .const import (
+    CONF_AIR,
+    CONF_JETS1,
+    CONF_JETS2,
     CONF_MCODE,
     CONF_PIN,
     CONF_SETPOINT_WINDOW,
     CONF_SYNC_CLOCK,
+    DEFAULT_EQUIPMENT,
     DEFAULT_SETPOINT_WINDOW,
     DEFAULT_SYNC_CLOCK,
     DOMAIN,
     SERVICE_PRESS,
     SERVICE_SEND_RAW,
 )
+from .spa_core import equipment as eq
 from .spa_core.protocol import Key
+
+STORAGE_VERSION = 1
+SETTINGS_SAVE_DELAY = 2.0
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,10 +54,33 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.CLIMATE,
     Platform.LIGHT,
+    Platform.NUMBER,
     Platform.SELECT,
     Platform.SENSOR,
+    Platform.SWITCH,
     Platform.TIME,
 ]
+
+# Device-key entities whose type depends on the equipment.
+_KEY_ENTITY_IDS = {f"{kind}_{key.value}" for kind in ("select", "switch") for key in (Key.JETS, Key.AUX, Key.AUX2)}
+
+
+def _resolve_equipment(entry: ConfigEntry, client: SpaClient) -> eq.Equipment:
+    o = entry.options
+    return eq.resolve(
+        o.get(CONF_JETS1, DEFAULT_EQUIPMENT),
+        o.get(CONF_JETS2, DEFAULT_EQUIPMENT),
+        o.get(CONF_AIR, DEFAULT_EQUIPMENT),
+        client.setting_value,
+    )
+
+
+def _expected_key_entities(equipment: eq.Equipment) -> set[str]:
+    from .select import select_keys
+    from .switch import switch_keys
+
+    return {f"select_{k.value}" for k in select_keys(equipment)} | {f"switch_{k.value}" for k in switch_keys(equipment)}
+
 
 type SpaConfigEntry = ConfigEntry[SpaClient]
 
@@ -64,6 +97,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpaConfigEntry) -> bool:
         entry.data[CONF_PIN],
         float(entry.options.get(CONF_SETPOINT_WINDOW, DEFAULT_SETPOINT_WINDOW)),
     )
+
+    # Settings read off the panel's menus, and changes waiting to be written.
+    store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+    stored = await store.async_load() or {}
+    client.load_settings(stored.get("settings", {}))
+    client.pending_settings = dict(stored.get("pending", {}))
+    client.equipment = _resolve_equipment(entry, client)
+
+    @callback
+    def _settings_changed() -> None:
+        store.async_delay_save(
+            lambda: {"settings": client.settings, "pending": client.pending_settings}, SETTINGS_SAVE_DELAY
+        )
+        # New P options from the panel can change which jet entities fit.
+        if _resolve_equipment(entry, client) != client.equipment:
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    client.on_settings_changed = _settings_changed
+
+    # Remove jet entities from an earlier equipment layout.
+    registry = er.async_get(hass)
+    address_prefix = f"{entry.data[CONF_ADDRESS]}_"
+    keep = _expected_key_entities(client.equipment)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        key = reg_entry.unique_id.removeprefix(address_prefix)
+        if key in _KEY_ENTITY_IDS and key not in keep:
+            registry.async_remove(reg_entry.entity_id)
     try:
         await client.ensure_connected()
     except SpaAuthError as err:

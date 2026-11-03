@@ -53,13 +53,16 @@ integration does what the app does:
 |---|---|
 | `climate` Thermostat | Water temperature, set point (direct write), and heating action from the heating LED. |
 | `light` Light | State from the light LED; turning it on or off presses the light key only when needed. |
-| `select` Jets, Jets 2, Air | Off / Lo / Hi / Lo + Hi from each key's lights; choosing one presses the key until the lights match. |
+| `switch` or `select` Jets 1, Jets 2, Air | Shaped by your equipment: on/off, low/high, or Jets A / Jets B / Both. Pressing the key until the lights match. |
+| Settings: `time` FP1-FP4, `number` FP1d-FP4d, CLdn, ECL, CHCL, Uto, PUF, `switch` U1-U6 | Read from the panel's menus when you scroll them; change them here and press **Apply settings** with the menu open at the panel. |
+| `binary_sensor` P1-P8, U7, U8; `sensor` d1-d8 | Read-only values from the options menu. |
+| `binary_sensor` Panel menu open; `sensor` Pending settings | Menu state and what is waiting to be written. |
 | `time` Clock | Read from the display when shown; setting it writes the time. |
 | `sensor` Status | Normal, Economy, Programming, or an error code (CoLd, OH, HLoH, SEoP, SESH, PSoC/L/H, ToE) with a description. |
 | `sensor` Water temperature, Display | The display text, e.g. `102°F`, `ECon`, `12:30`. |
 | `binary_sensor` Economy mode, Problem | From the display messages and the overheat light. |
 | `binary_sensor` Heating, Filtering, Overheat, Jets/Jets 2/Air low and high, Edit, AM | From the indicator lights. |
-| `button` Jets key, Air key, Aux key, Set key (done using spa), Sync clock | One press each. |
+| `button` Jets key, Air key, Aux key, Set key (done using spa), Sync clock, Apply settings, Discard pending settings | One press each. |
 | `sensor` Last raw frame, Auth state | Diagnostic. |
 
 Services: `smartouch_spa.send_raw` (write hex bytes to a non-configuration

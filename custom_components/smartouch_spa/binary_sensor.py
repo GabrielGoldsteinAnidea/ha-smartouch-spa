@@ -12,7 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import SpaConfigEntry
-from .entity import SpaEntity
+from .entity import SpaEntity, SpaSettingEntity
+from .spa_core import menus
 
 # indicator -> (device class, enabled by default, diagnostic)
 INDICATORS: dict[str, tuple[BinarySensorDeviceClass | None, bool, bool]] = {
@@ -40,6 +41,8 @@ async def async_setup_entry(
             *(IndicatorSensor(client, address, name, *cfg) for name, cfg in INDICATORS.items()),
             EconomySensor(client, address, "economy"),
             ProblemSensor(client, address, "problem"),
+            MenuOpenSensor(client, address, "menu_open"),
+            *(FlagSensor(client, address, s) for s in menus.OPTIONS if s.kind is menus.Kind.FLAG and not s.writable),
         ]
     )
 
@@ -84,3 +87,32 @@ class ProblemSensor(SpaEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict:
         errors = self.client.tracker.current_errors()
         return {"errors": [m.code for m in errors], "details": [m.description for m in errors]}
+
+
+class MenuOpenSensor(SpaEntity, BinarySensorEntity):
+    """On while someone has a programming menu open at the panel."""
+
+    _attr_translation_key = "menu_open"
+    _attr_icon = "mdi:menu-open"
+
+    @property
+    def is_on(self) -> bool:
+        return self.client.menu.open
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        m = self.client.menu
+        return {
+            "menu": None if m.menu is None else m.menu.value,
+            "item": None if m.label is None else m.label.code,
+            "value": m.value,
+        }
+
+
+class FlagSensor(SpaSettingEntity, BinarySensorEntity):
+    """Read-only U7/U8 and protected P options, as last read from the panel."""
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self.client.setting_value(self.setting.code)
+        return None if value is None else bool(int(value))

@@ -13,13 +13,18 @@ from homeassistant.components.bluetooth import (
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
+from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode
 
 from .const import (
+    CONF_AIR,
+    CONF_JETS1,
+    CONF_JETS2,
     CONF_MCODE,
     CONF_PIN,
     CONF_SETPOINT_WINDOW,
     CONF_SYNC_CLOCK,
     CONF_TEMP_UNIT,
+    DEFAULT_EQUIPMENT,
     DEFAULT_SETPOINT_WINDOW,
     DEFAULT_SYNC_CLOCK,
     DEFAULT_TEMP_UNIT,
@@ -28,6 +33,10 @@ from .const import (
 from .spa_core.protocol import SERVICE_UUID, generate_mcode
 
 PIN_SCHEMA = vol.Schema({vol.Required(CONF_PIN): str})
+
+
+def _choice(key: str, options: list[str]) -> SelectSelector:
+    return SelectSelector(SelectSelectorConfig(options=options, translation_key=key, mode=SelectSelectorMode.DROPDOWN))
 
 
 def _valid_pin(pin: str) -> bool:
@@ -128,6 +137,15 @@ class SmartouchSpaOptionsFlow(OptionsFlow):
                     CONF_SETPOINT_WINDOW, default=o.get(CONF_SETPOINT_WINDOW, DEFAULT_SETPOINT_WINDOW)
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=30)),
                 vol.Optional(CONF_SYNC_CLOCK, default=o.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK)): bool,
+                vol.Optional(CONF_JETS1, default=o.get(CONF_JETS1, DEFAULT_EQUIPMENT)): _choice(
+                    CONF_JETS1, ["auto", "single", "dual"]
+                ),
+                vol.Optional(CONF_JETS2, default=o.get(CONF_JETS2, DEFAULT_EQUIPMENT)): _choice(
+                    CONF_JETS2, ["auto", "none", "single", "dual", "two"]
+                ),
+                vol.Optional(CONF_AIR, default=o.get(CONF_AIR, DEFAULT_EQUIPMENT)): _choice(
+                    CONF_AIR, ["auto", "yes", "no"]
+                ),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
