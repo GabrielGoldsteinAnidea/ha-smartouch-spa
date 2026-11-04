@@ -62,7 +62,7 @@ integration does what the app does:
 | `sensor` Water temperature, Display | The display text, e.g. `102°F`, `ECon`, `12:30`. |
 | `binary_sensor` Economy mode, Problem | From the display messages and the overheat light. |
 | `binary_sensor` Heating, Filtering, Overheat, Jets/Jets 2/Air low and high, Edit, AM | From the indicator lights. |
-| `button` Jets key, Air key, Aux key, Set key (done using spa), Up, Down, Set-temp and Set-time keys (untested), Sync clock, Apply settings, Discard pending settings | One press each. Up/Down/Set-temp/Set-time send `u0`/`d0`/`u1`/`d1`, which are in the app's code table but never sent by it. |
+| `button` Jets key, Air key, Aux key, Set key (done using spa), Up, Down, Set-temp and Set-time keys (no effect seen on the owner's spa), Sync clock, Apply settings, Discard pending settings | One press each. Up/Down/Set-temp/Set-time send `u0`/`d0`/`u1`/`d1`, which are in the app's code table but never sent by it. |
 | `sensor` Last raw frame, Auth state | Diagnostic. |
 
 Services: `smartouch_spa.send_raw` (write hex bytes to a non-configuration

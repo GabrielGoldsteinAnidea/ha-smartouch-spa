@@ -615,6 +615,9 @@ class SpaClient:
 
     async def set_temperature(self, value: float, unit: str) -> None:
         payload = p.encode_temperature(value, unit)  # validates before anything is sent
-        self.tracker.note_set_point_change()
+        # The display does not show the new set point after a TEMPERATURE write
+        # (2026-11-03 21:27:27: nothing changed on it for 31 s), so readings
+        # after a write are water temperature, not set point.
         await self._write(p.CHAR_TEMPERATURE, payload)
         self.commanded_set_point = (value, unit, time.monotonic())
+        self._settings_changed()  # remembered across restarts

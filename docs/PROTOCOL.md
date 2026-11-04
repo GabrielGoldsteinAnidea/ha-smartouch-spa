@@ -95,7 +95,9 @@ real GATT property flags are not yet observed.
 |---|---|---|
 | The app sets the temperature **directly**, by writing a 4-char ASCII value to `TEMPERATURE`. In °F that is the integer plus `F`, zero-padded (`102F`, `099F`). In °C it is tenths of a degree plus `C` (`385C` = 38.5 °C). | Static | `js/panel.js:180-196` |
 | The app offers 40-104 °F for a spa. Its °C list is the °F list converted with its own rounding (`f2c`), so it only ever sends °C values that match a whole °F. | Static | `js/panel.js:45-53` `device_limits.spa`; `:310-315` `f2c()`; `:107-129` `fill_opts_temp_select()` |
-| Whether the module applies the value directly or simulates button presses, and whether the display then shows the new set point. | Unknown | Needs a live test |
+| The display does **not** show the new set point after a `TEMPERATURE` write, and nothing on it changes. | Observed once | 2026-11-03 21:27:27 `102F` with water at 104 °F: no frame for 31 s, then the heating light went out (21:27:58). That fits the set point having dropped below the water, but is not proof. |
+| Whether the write changes the set point. | Likely, unconfirmed | The heater stopped 31 s after `102F`. After `104F` (21:28:52) it had not restarted by 21:34 with water at 103-104 °F, which economy mode (`ECon` was showing) or the heater's hysteresis could explain. Check on the panel: UP shows the set point. |
+| The panel never reports its set point on the display stream, so the integration remembers the last set point it sent (kept across restarts). Until one is sent, the thermostat has no target and Home Assistant hides its set-point control. | Design | v0.4.4 |
 
 ## Display frame
 
@@ -108,7 +110,7 @@ real GATT property flags are not yet observed.
 | A first byte of `b9` (C plus dot) means the spa shows °C; `f1` (F plus dot) means °F. | Static | `js/panel.js:382-389` |
 | Byte 4 LEDs, bit0 upward: heating, air high, jets low, jets high, filtering, edit, overheat, AM. | Static | `js/panel.js:353-361` `segments[4]` |
 | Byte 5 LEDs: bits 0-3 unused; bit4 light, bit5 jets2 high, bit6 jets2 low, bit7 air low. | Static | `js/panel.js:363-367` and `:376` |
-| Which displayed temperature is the set point and which is the water temperature. The `edit` LED is a candidate for "showing the set point". | Unknown | Needs a live capture while changing the set point |
+| Which displayed temperature is the set point. | Superseded | The display only ever showed water temperature: a `TEMPERATURE` write does not bring up the set point (see Set temperature). |
 
 ## Menus
 
@@ -122,7 +124,9 @@ real GATT property flags are not yet observed.
 | A parameter's value shows after SET on it; times show `h:mm` with the AM light. | Reported | Manuals pages 13-14. Not yet seen on this spa. |
 | The same panel key moved backwards through the parameter menu and forwards through the options menu in the owner's session. | Observed | Same session. The takeover therefore learns UP's direction for each menu from its first press. |
 | `u0` does **not** move the options menu. | Confirmed | 2026-11-02 20:07:36: the armed takeover sent `75 30` with the options menu open on CAnC; the display stayed on CAnC until the panel closed the menu 30 s later. The module accepted the write (no error). |
-| Whether `d0` moves a menu. | Unknown | Next test. The takeover now tries the other key when one does nothing, and navigates the circular menu with whichever key works. |
+| `u0` and `d0` do not move the options menu, and `u1` and `d1` do nothing there either. | Confirmed | 2026-11-03 21:13-21:16, owner pressing the new buttons with the options menu open: 8 `u0` in 3 s, 4 `d0`, 4 `u1`, 3 `d1`; the label never moved on a press. The menu takeover therefore cannot reach any item but the one the menu opens on. |
+| `s0` (SET) works inside a menu: it toggles the shown option. | Confirmed | 2026-11-03 21:16:12.17 `s0` with `U1 0` showing; `U1 1` at 21:16:12.70. |
+| A `TIME` write while the options menu is open makes the panel step **backwards** through the whole menu by itself (U1, SEnd, CAnC, d8 ... d1, P8 ... P1, U8 ... U1, SEnd, CAnC), about 0.15-0.3 s a step with one 7 s pause at P4, and then leave the menu at CAnC without saving. So the module drives the panel's keys internally (its time-setting routine), even though the `u0`/`d0` codes do nothing. | Observed once | 2026-11-03 21:16:19.48 Sync clock (`0916P`); frames 21:16:19.9-21:16:34.9. |
 
 ## Flashing lights
 
@@ -147,7 +151,9 @@ the reading sitting on a half-degree boundary.
 | The app sets the spa's time of day by writing `HHMM` + `A`/`P` to `TIME`, 12-hour, zero-padded: 7:45 PM is `0745P`, 12:05 AM is `1205A`. | Static | `js/panel.js:207-214` (`send-time-value` formats with `toLocaleString("en-US", {hour12: true})`); `js/transmitter.js` `parse_time()` |
 | Normal (non-master) users can set the time: "Set Current Time on device" is the one Advanced Configurations entry without the `master-bt-buttons` class. | Static | `index.html` `adv-configs-page` |
 | The panel shows the time of day for the first 10 s of each minute once it is set; the clock resets to 12:00 AM after a power cut and drives the filtration and silence periods. | Reported | SmarTouch Digital Series 1000 & 2000 User & Programming Manual, pages 6 and 13-14 |
-| Whether this module shows the time on its display stream, and how. | Unknown | Not seen yet: the owner's clock may never have been set |
+| A `TIME` write on the normal display shows nothing, and the display stream then goes quiet: no frame at all for 2 min 15 s. | Observed once | 2026-11-03 21:25:43 `0925P`; next frame 21:27:58. |
+| Once a minute (at :41 by Home Assistant's clock on 2026-11-03) the panel shows a status for 9 s: normally `ECon`. Once, at 21:28:41, that slot instead counted `00:51`, `00:52` ... `00:59`, one step a second with the colon blinking. The same counter (`00:52`-`00:59`) was seen on 2026-11-02 after an AIR press. What it is (clock, timer) is unknown; it is not the time that was written. | Observed | Frames `xx ed bf 3f ..` / `xx 6d 3f 3f ..` |
+| Whether the TIME write sets the clock. | Unknown | The time of day has not been seen on the display. |
 
 ## Messages on the display
 
@@ -170,10 +176,11 @@ Reported only. `spa_core/status.py` holds the table, with page references.
 ## Still unknown (needs the spa)
 
 1. What `j0`, `a0`, `x0` and `s0` do on this spa, and each key's cycle.
-2. How the display distinguishes set point from water temperature, and whether a `TEMPERATURE` write makes the display show the set point.
+2. Whether a `TEMPERATURE` write changes the set point (the display does not show it; see Set temperature).
 3. Whether each LED bit other than light means what its name in the app says, on this spa.
 4. Whether the module allows a second BLE connection while the phone is connected (assumed not).
-5. Whether a `TIME` write sets the clock, and whether the display stream shows the clock.
+5. Whether a `TIME` write sets the clock, and what the `00:5x` counter is.
+7. `d1` on the normal display stalled the display stream for about a minute (2026-11-03 21:32:41-21:33:40; the write itself left 5 s late). `u0`, `d0` and `u1` there changed nothing.
 6. Why the water temperature alternates between 98 and 99 °F every 1-10 s (sensor on a half-degree boundary, or the panel alternating two values).
 
 ## Assumptions currently built into the integration

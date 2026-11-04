@@ -103,12 +103,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpaConfigEntry) -> bool:
     stored = await store.async_load() or {}
     client.load_settings(stored.get("settings", {}))
     client.pending_settings = dict(stored.get("pending", {}))
+    # The panel never reports its set point, so keep the last one we sent.
+    if stored.get("set_point"):
+        value, unit = stored["set_point"]
+        client.commanded_set_point = (value, unit, 0.0)
     client.equipment = _resolve_equipment(entry, client)
 
     @callback
     def _settings_changed() -> None:
         store.async_delay_save(
-            lambda: {"settings": client.settings, "pending": client.pending_settings}, SETTINGS_SAVE_DELAY
+            lambda: {
+                "settings": client.settings,
+                "pending": client.pending_settings,
+                "set_point": client.commanded_set_point[:2] if client.commanded_set_point else None,
+            },
+            SETTINGS_SAVE_DELAY,
         )
         # New P options from the panel can change which jet entities fit.
         if _resolve_equipment(entry, client) != client.equipment:

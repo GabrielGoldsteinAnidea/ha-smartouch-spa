@@ -84,11 +84,8 @@ class SimModule:
             self.light = not self.light
             self._notify(p.CHAR_DISPLAY, self.frame())
         elif uuid == p.CHAR_TEMPERATURE:
+            # The real module changes nothing on the display (2026-11-03).
             self.set_point = int(text[:3])
-            self._notify(
-                p.CHAR_DISPLAY,
-                p.encode_display(f"{self.set_point}F", dots=(False, False, False, True), leds=b"\x21\x00"),
-            )
 
     async def disconnect(self):
         self.is_connected = False
@@ -123,7 +120,7 @@ async def _happy(monkeypatch):
     await c.set_temperature(102, "F")
     await asyncio.sleep(0)
     assert (p.CHAR_TEMPERATURE, b"102F") in sim.writes
-    assert c.state.set_point.value == 102 and c.state.water_temp.value == 98
+    assert sim.set_point == 102 and c.state.water_temp.value == 98
     assert c.commanded_set_point[:2] == (102, "F")
 
     with pytest.raises(ValueError):

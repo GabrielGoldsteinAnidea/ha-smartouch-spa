@@ -95,16 +95,16 @@
         "name": "Set key (done using spa)"
       },
       "up": {
-        "name": "Up key (u0, untested)"
+        "name": "Up key (u0, no effect seen)"
       },
       "down": {
-        "name": "Down key (d0, untested)"
+        "name": "Down key (d0, no effect seen)"
       },
       "set_temp": {
-        "name": "Set-temp key (u1, untested)"
+        "name": "Set-temp key (u1, no effect seen)"
       },
       "set_time": {
-        "name": "Set-time key (d1, untested)"
+        "name": "Set-time key (d1, no effect seen)"
       },
       "sync_clock": {
         "name": "Sync clock"
