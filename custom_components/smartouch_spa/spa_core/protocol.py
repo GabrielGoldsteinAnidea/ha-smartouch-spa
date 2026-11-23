@@ -215,6 +215,24 @@ INDICATOR_BITS: dict[str, tuple[int, int]] = {
     "air_low": (5, 7),
 }
 
+# On the owner's spa the light LED bit is the INVERSE of the lamp: the bit is
+# set while the lamp is off. The app draws the bit as the LED as-is, so the
+# raw indicator above keeps the app's meaning and the lamp state is derived
+# here. Evidence (docs/PROTOCOL.md, 2026-11-22): the lamp was on all evening
+# with the bit clear; each of three l0 presses flipped bit and lamp in
+# opposite directions, the last at 21:58:52 setting the bit while the owner
+# saw the lamp go off.
+LIGHT_LED_INVERTED = True
+
+
+def lamp_on_from_indicators(indicators: dict[str, bool]) -> bool | None:
+    """Whether the spa lamp is on, from a frame's decoded indicators."""
+    led = indicators.get("light")
+    if led is None:
+        return None
+    return not led if LIGHT_LED_INVERTED else led
+
+
 _DECODER = SevenSegmentDecoder()  # bit0=a ... bit6=g, bit7=dot (h)
 
 

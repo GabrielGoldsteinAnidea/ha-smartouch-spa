@@ -1,8 +1,8 @@
-"""Spa light: state from the light LED, toggled with the light key.
+"""Spa light: state from the light LED bit, toggled with the light key.
 
 The LED bit (display byte 5, bit 4) and the key code ("l0") come from the
-app's source. Whether the LED tracks the light on this spa is still to be
-confirmed (docs/PROTOCOL.md).
+app's source. On the owner's spa the bit is set while the lamp is OFF, so
+the state goes through protocol.lamp_on_from_indicators (docs/PROTOCOL.md).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import SpaConfigEntry
 from .entity import SpaEntity
-from .spa_core.protocol import Key
+from .spa_core.protocol import Key, lamp_on_from_indicators
 
 
 async def async_setup_entry(
@@ -33,7 +33,7 @@ class SpaLight(SpaEntity, LightEntity):
 
     @property
     def is_on(self) -> bool | None:
-        return self.client.state.indicators.get("light")
+        return lamp_on_from_indicators(self.client.state.indicators)
 
     async def _toggle_to(self, on: bool) -> None:
         if self.is_on is None:
