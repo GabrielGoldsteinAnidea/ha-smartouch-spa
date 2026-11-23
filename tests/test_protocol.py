@@ -137,3 +137,18 @@ def test_key_leds_cover_device_keys():
     assert set(p.KEY_LEDS) == {p.Key.JETS, p.Key.AUX, p.Key.AUX2}
     for lo, hi in p.KEY_LEDS.values():
         assert lo in p.INDICATOR_BITS and hi in p.INDICATOR_BITS
+
+
+def test_light_led_bit_is_inverse_of_lamp():
+    """Real frames from 2026-11-22, with the owner watching the lamp.
+
+    Lamp on all evening with byte 5 = 00; after the 21:58:52 l0 press the
+    module sent byte 5 = 10 and the owner saw the lamp go off.
+    """
+    lamp_on = p.parse_display(bytes.fromhex("f14f3f060100"))
+    lamp_off = p.parse_display(bytes.fromhex("f1663f060010"))
+    assert lamp_on.indicators["light"] is False
+    assert lamp_off.indicators["light"] is True
+    assert p.lamp_on_from_indicators(lamp_on.indicators) is True
+    assert p.lamp_on_from_indicators(lamp_off.indicators) is False
+    assert p.lamp_on_from_indicators({}) is None
